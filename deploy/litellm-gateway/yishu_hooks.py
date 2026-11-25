@@ -10,7 +10,10 @@ from __future__ import annotations
 import logging
 
 logger = logging.getLogger("yishu.litellm_hooks")
-_patched = False
+
+
+def _write_engine(prisma_client: object, engine: object) -> None:
+    prisma_client._engine = engine  # type: ignore[attr-defined]
 
 
 def patch_prisma_engine_slot() -> None:
@@ -26,16 +29,12 @@ def patch_prisma_engine_slot() -> None:
     setter restores the per-engine drain tracking and removes the misleading
     startup warning. It is a no-op after the first successful call.
     """
-    global _patched
-    if _patched:
-        return
     from litellm.proxy.db import prisma_client as prisma_module
 
-    def _write_engine(prisma_client: object, engine: object) -> None:
-        prisma_client._engine = engine  # type: ignore[attr-defined]
+    if prisma_module.PrismaWrapper._write_engine is _write_engine:
+        return
 
     prisma_module.PrismaWrapper._write_engine = staticmethod(_write_engine)
-    _patched = True
     logger.warning(
         "yishu hook: patched PrismaWrapper._write_engine to use the prisma-client-py 0.15 _engine setter"
     )

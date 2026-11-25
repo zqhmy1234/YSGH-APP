@@ -2495,6 +2495,78 @@
         ]
       }
     },
+    "/api/v1/echo/preference": {
+      "get": {
+        "tags": [
+          "echo"
+        ],
+        "summary": "Echo Preference Get",
+        "description": "读回响设置（缺行时返回建表默认，不写库）。",
+        "operationId": "echo_preference_get_api_v1_echo_preference_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EchoPreferenceOut_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "echo"
+        ],
+        "summary": "Echo Preference Put",
+        "description": "写回响设置：字段白名单（enabled/quiet_start/quiet_end/max_per_day），用户隔离。\n\nchannels 与 role_visibility 不接受写入：前者服务端白名单，后者 B8 家庭域预留。",
+        "operationId": "echo_preference_put_api_v1_echo_preference_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EchoPreferenceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EchoPreferenceOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/echo/today": {
       "get": {
         "tags": [
@@ -2527,7 +2599,7 @@
           "echo"
         ],
         "summary": "Echo Dismiss",
-        "description": "划掉不再出现（R4#15 幂等：同内容已划掉 → 直接返回成功，不重复落 dismiss 记录）\n\n幂等键 = (user_id, fingerprint)；content_id 经确定性指纹（uuid5）稳定映射，\n重复 dismiss 不再叠加 EchoHistory 行（不重复计数）。",
+        "description": "划掉不再出现（R4#15 幂等：同内容已划掉 → 直接返回成功，不重复落 dismiss 记录）\n\n幂等键 = (user_id, fingerprint)；DB 部分唯一索引 uq_echo_history_dismiss\n保证并发重复请求不叠加记录（IntegrityError → 视为已划掉）。\ncontent_id 必须是当前用户未删除的内容（IDOR 防护：非本人/已删 → 404）。",
         "operationId": "echo_dismiss_api_v1_echo__content_id__dismiss_post",
         "security": [
           {
@@ -2552,6 +2624,307 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_EchoDismissOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trust/consents": {
+      "get": {
+        "tags": [
+          "trust"
+        ],
+        "summary": "Consents Get",
+        "operationId": "consents_get_api_v1_trust_consents_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ConsentListOut_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "trust"
+        ],
+        "summary": "Consents Put",
+        "operationId": "consents_put_api_v1_trust_consents_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentSetIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/trust/vault": {
+      "get": {
+        "tags": [
+          "trust"
+        ],
+        "summary": "Vault List",
+        "operationId": "vault_list_api_v1_trust_vault_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_VaultItemOut__"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/trust/vault/lock": {
+      "post": {
+        "tags": [
+          "trust"
+        ],
+        "summary": "Vault Lock",
+        "operationId": "vault_lock_api_v1_trust_vault_lock_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VaultLockIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/trust/vault/unlock": {
+      "post": {
+        "tags": [
+          "trust"
+        ],
+        "summary": "Vault Unlock",
+        "operationId": "vault_unlock_api_v1_trust_vault_unlock_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VaultUnlockIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/trust/vault/{content_id}/token": {
+      "get": {
+        "tags": [
+          "trust"
+        ],
+        "summary": "Vault Token",
+        "operationId": "vault_token_api_v1_trust_vault__content_id__token_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Content Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_VaultTokenOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trust/audit": {
+      "get": {
+        "tags": [
+          "trust"
+        ],
+        "summary": "Audit List",
+        "operationId": "audit_list_api_v1_trust_audit_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AuditListOut_"
                 }
               }
             }
@@ -4558,6 +4931,37 @@
         "type": "object",
         "title": "ApiResponse[AsrTranscribeResponse]"
       },
+      "ApiResponse_AuditListOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuditListOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[AuditListOut]"
+      },
       "ApiResponse_CapsuleDeleteOut_": {
         "properties": {
           "code": {
@@ -4775,6 +5179,37 @@
         "type": "object",
         "title": "ApiResponse[ClassifyJobQueued]"
       },
+      "ApiResponse_ConsentListOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConsentListOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[ConsentListOut]"
+      },
       "ApiResponse_ContentDeleteOut_": {
         "properties": {
           "code": {
@@ -4898,6 +5333,37 @@
         },
         "type": "object",
         "title": "ApiResponse[EchoDismissOut]"
+      },
+      "ApiResponse_EchoPreferenceOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EchoPreferenceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[EchoPreferenceOut]"
       },
       "ApiResponse_EchoTodayOut_": {
         "properties": {
@@ -5922,6 +6388,37 @@
         "type": "object",
         "title": "ApiResponse[UserMeOut]"
       },
+      "ApiResponse_VaultTokenOut_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VaultTokenOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[VaultTokenOut]"
+      },
       "ApiResponse_WechatBindOut_": {
         "properties": {
           "code": {
@@ -6390,6 +6887,41 @@
         "type": "object",
         "title": "ApiResponse[list[TrashItemOut]]"
       },
+      "ApiResponse_list_VaultItemOut__": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "OK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/VaultItemOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[list[VaultItemOut]]"
+      },
       "ArbitrateJobOut": {
         "properties": {
           "job_id": {
@@ -6705,6 +7237,62 @@
         ],
         "title": "AsrTranscribeResponse",
         "description": "转写结果（真实、空白语音与开发 mock 同构）\n\n- outcome: succeeded / no_speech / mock\n- channel: funasr / sensevoice / local_vad / mock\n- emotion: 声学情绪（开心/难过/生气/惊讶/恐惧/厌恶/平静），B5-c 情绪关怀分层触发依据；null=未测得（D-16）\n- guardrail: 内容安全审核结论（fail-safe：真实模式下不可用默认拦截）"
+      },
+      "AuditItemOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "detail": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Detail"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "action",
+          "detail",
+          "created_at"
+        ],
+        "title": "AuditItemOut"
+      },
+      "AuditListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditItemOut"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "AuditListOut"
       },
       "Body_complete_upload_api_v1_upload_complete_post": {
         "properties": {
@@ -7581,6 +8169,86 @@
         "title": "ClientEventItem",
         "description": "端侧 L1 事件（S-SY-1：client_event_id 幂等键）\n\n端侧 ST-DBSCAN（B3-6 端侧 L0/L1 真值）产出的日卡片事件；\n云侧只做归属校验 + 落库 + L2/L3 候选（caption/CI 打标已在 _process_photo）。"
       },
+      "ConsentItemOut": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "granted": {
+            "type": "boolean",
+            "title": "Granted"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scope",
+          "label",
+          "state",
+          "granted"
+        ],
+        "title": "ConsentItemOut"
+      },
+      "ConsentListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ConsentItemOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "default": "关闭授权不影响已生成内容，仅阻止后续使用"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "ConsentListOut"
+      },
+      "ConsentSetIn": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "title": "Scope",
+            "description": "合法值：family_share, model_training, personalization, research_analysis, support_access"
+          },
+          "granted": {
+            "type": "boolean",
+            "title": "Granted"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "scope",
+          "granted"
+        ],
+        "title": "ConsentSetIn"
+      },
       "ContentCreate": {
         "properties": {
           "content_type": {
@@ -8263,6 +8931,101 @@
         ],
         "title": "EchoDismissOut",
         "description": "回响划掉出参（POST /api/v1/echo/{content_id}/dismiss）"
+      },
+      "EchoPreferenceIn": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "quiet_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{2}:\\d{2}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiet Start"
+          },
+          "quiet_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{2}:\\d{2}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiet End"
+          },
+          "max_per_day": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Per Day"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "EchoPreferenceIn",
+        "description": "回响用户设置入参（PUT /api/v1/echo/preference）"
+      },
+      "EchoPreferenceOut": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "quiet_start": {
+            "type": "string",
+            "title": "Quiet Start"
+          },
+          "quiet_end": {
+            "type": "string",
+            "title": "Quiet End"
+          },
+          "max_per_day": {
+            "type": "integer",
+            "title": "Max Per Day"
+          },
+          "channels": {
+            "type": "string",
+            "title": "Channels"
+          },
+          "role_visibility": {
+            "type": "string",
+            "title": "Role Visibility",
+            "default": "owner_only"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled",
+          "quiet_start",
+          "quiet_end",
+          "max_per_day",
+          "channels"
+        ],
+        "title": "EchoPreferenceOut",
+        "description": "回响用户设置出参（GET /api/v1/echo/preference）\n\nrole_visibility 为 B8 家庭域预留占位：当前恒 'owner_only'，不参与闸判定。"
       },
       "EchoTodayOut": {
         "properties": {
@@ -10827,6 +11590,103 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VaultItemOut": {
+        "properties": {
+          "content_id": {
+            "type": "string",
+            "title": "Content Id"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "granted_roles": {
+            "items": {},
+            "type": "array",
+            "title": "Granted Roles"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content_id",
+          "created_at"
+        ],
+        "title": "VaultItemOut"
+      },
+      "VaultLockIn": {
+        "properties": {
+          "content_id": {
+            "type": "string",
+            "title": "Content Id"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "content_id"
+        ],
+        "title": "VaultLockIn"
+      },
+      "VaultTokenOut": {
+        "properties": {
+          "content_id": {
+            "type": "string",
+            "title": "Content Id"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content_id",
+          "key"
+        ],
+        "title": "VaultTokenOut"
+      },
+      "VaultUnlockIn": {
+        "properties": {
+          "content_id": {
+            "type": "string",
+            "title": "Content Id"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "content_id",
+          "key"
+        ],
+        "title": "VaultUnlockIn"
       },
       "VoiceInfo": {
         "properties": {

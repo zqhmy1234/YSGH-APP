@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 import jwt
 from fastapi import Depends, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import select
+from sqlalchemy import Uuid, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -207,11 +207,11 @@ def load_owned_entity(
     """
     # 畸形 ID 视同不存在（404），不让 PG 的 UUID 转换异常升级成 500（审判 P1）。
     # 不区分「格式非法」与「不存在」——保持 IDOR 防护的存在性不可探测语义。
-    import uuid as _uuid
-    try:
-        _uuid.UUID(str(entity_id))
-    except (ValueError, AttributeError, TypeError) as exc:
-        raise ApiError(error_code, message, http=http) from exc
+    if isinstance(model.id.type, Uuid):
+        try:
+            uuid.UUID(str(entity_id))
+        except (ValueError, AttributeError, TypeError) as exc:
+            raise ApiError(error_code, message, http=http) from exc
     conditions = [model.id == entity_id, model.user_id == user_id]
     if alive:
         conditions.append(model.deleted_at.is_(None))

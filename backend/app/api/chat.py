@@ -51,7 +51,6 @@ from app.core.errors import (
     ERR_CHAT_002,
     ERR_CHAT_003,
     ERR_CHAT_004,
-    ERR_CHAT_005,
     ApiError,
 )
 from app.db.models import ChatMessage, User
