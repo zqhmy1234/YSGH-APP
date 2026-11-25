@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
+
 from prompts.role_card import CardLoadError, RoleCardRepository
 
 EXPECTED = {

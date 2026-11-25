@@ -20,7 +20,10 @@ def stable_prompt(card: RoleCard, *, policy_version: str = "2026-11-23") -> str:
 
 
 def stable_cache_key(card: RoleCard, *, policy_version: str = "2026-11-23") -> str:
-    material = f"{policy_version}|{card.role_id}|{card.version}|{card.card_hash}|{stable_prompt(card, policy_version=policy_version)}"
+    material = (
+        f"{policy_version}|{card.role_id}|{card.version}|{card.card_hash}|"
+        f"{stable_prompt(card, policy_version=policy_version)}"
+    )
     return hashlib.sha256(material.encode("utf-8")).hexdigest()[:24]
 
 

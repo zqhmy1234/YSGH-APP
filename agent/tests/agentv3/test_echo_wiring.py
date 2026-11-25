@@ -4,6 +4,7 @@ The backend endpoint ``POST /api/v1/echo/agent`` is read-only: it must NOT write
 EchoHistory or an in-app message. Only the user-side ``/echo/today`` consumes
 the daily slot. These tests prove the adapter contract and the orchestrator path.
 """
+
 from __future__ import annotations
 
 import sys
@@ -109,11 +110,17 @@ def test_backend_http_echo_contract(monkeypatch):
 
     adapter = BackendHTTP(base_url="http://x", token="t", user_id="p1")
     payload = {
-        "items": [{
-            "echo_id": "echo-9", "person_id": "p1", "title": "桂花开了",
-            "reason": "anniversary", "sensitivity": "personal",
-            "score": 0.8, "why_now": "去年的今天",
-        }],
+        "items": [
+            {
+                "echo_id": "echo-9",
+                "person_id": "p1",
+                "title": "桂花开了",
+                "reason": "anniversary",
+                "sensitivity": "personal",
+                "score": 0.8,
+                "why_now": "去年的今天",
+            }
+        ],
         "suppressed": "",
     }
     monkeypatch.setattr(adapter, "_post", lambda *a, **k: payload)
@@ -129,10 +136,18 @@ def test_backend_http_echo_filters_bad_reason():
 
     adapter = BackendHTTP(base_url="http://x", token="t", user_id="p1")
     payload = {
-        "items": [{
-            "echo_id": "e", "person_id": "p1", "title": "x",
-            "reason": "bogus", "sensitivity": "bogus", "score": 1.2, "why_now": "y",
-        }], "suppressed": "",
+        "items": [
+            {
+                "echo_id": "e",
+                "person_id": "p1",
+                "title": "x",
+                "reason": "bogus",
+                "sensitivity": "bogus",
+                "score": 1.2,
+                "why_now": "y",
+            }
+        ],
+        "suppressed": "",
     }
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(adapter, "_post", lambda *a, **k: payload)

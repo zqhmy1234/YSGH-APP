@@ -101,6 +101,7 @@ def test_family_matrix_endpoint():
 def test_ingest_requires_person_id():
     assert _client().post("/v1/v3/ingest", json={"items": []}).status_code == 422
 
+
 def test_backend_wire_shape_is_accepted_on_chat_stream():
     """The live backend sends {user_id,message,thread_id}; that must not 422."""
     client = _client(token="secret")
@@ -143,6 +144,7 @@ def test_thread_id_split_keeps_conversation_key():
     assert _split_thread_id("u1:conv-9", "fallback") == ("u1", "conv-9")
     assert _split_thread_id("u1", "fallback") == ("u1", "u1")
     assert _split_thread_id(":conv", "u2") == ("u2", "conv")
+
 
 def test_v1_chat_accepts_backend_shape_too():
     """One path, two live clients: backend shape must not 422 on /v1/chat."""

@@ -6,8 +6,7 @@ reports ``unavailable`` instead of an empty-looking success.
 
 from __future__ import annotations
 
-from harness.contracts import DIGEST_MAX_CHARS, Digest, DigestSection, MemoryEntry, MemoryLayer
-from harness.contracts import DigestSection as _DS
+from harness.contracts import DIGEST_MAX_CHARS, Digest, DigestSection, DigestSection as _DS, MemoryEntry, MemoryLayer
 
 SECTIONS = ("身份", "关系", "习惯", "偏好", "重要事件", "雷区", "近期状态", "未了事项")
 

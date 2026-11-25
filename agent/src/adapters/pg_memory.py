@@ -63,7 +63,8 @@ class PgMemoryStore(MemoryStore):
             for fact in state.get("facts", {}).values():
                 tags = fact.get("tags", {}) or {}
                 cur.execute(
-                    "INSERT INTO agent_v3_memory_tags(entry_id, person_id, library, category, content_type, mood, topics, content_format, image_route) "
+                    "INSERT INTO agent_v3_memory_tags(entry_id, person_id, library, category, "
+                    "content_type, mood, topics, content_format, image_route) "
                     "VALUES(%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s) "
                     "ON CONFLICT (entry_id) DO UPDATE SET library=EXCLUDED.library, category=EXCLUDED.category, "
                     "content_type=EXCLUDED.content_type, mood=EXCLUDED.mood, topics=EXCLUDED.topics, "

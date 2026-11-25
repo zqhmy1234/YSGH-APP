@@ -114,6 +114,7 @@ def test_missing_base_url_is_unavailable():
     with pytest.raises(PortUnavailable):
         BackendHTTP().search(SearchQuery(query="x", person_id="p1"))
 
+
 def test_search_wrapper_calls_backend_once_per_turn(base):
     """keyword/dense/sparse must not fire three full RAG pipelines for one turn."""
     from adapters.backend_http import BackendHTTP, BackendSearchHTTP

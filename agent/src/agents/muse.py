@@ -49,6 +49,7 @@ def strip_state_block(text: str) -> str:
         return text
     return candidate[:start].rstrip()
 
+
 ToolFn = Callable[[dict[str, str]], ToolResult]
 
 

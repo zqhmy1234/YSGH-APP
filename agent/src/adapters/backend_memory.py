@@ -11,6 +11,7 @@ merge review:
   - entry ids are derived from batch hash + index, so retries across processes
     converge on the same canonical row instead of appending duplicates.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -33,7 +34,7 @@ _LAYER_MAP = {
     MemoryLayer.NARRATIVE.value: "narrative",
     MemoryLayer.FACT.value: "fact_claim",
     MemoryLayer.PREFERENCE.value: "narrative",  # 偏好是叙事的一种，无独立 canonical 层
-    MemoryLayer.ASSET.value: "narrative",       # 资产索引存 text，层归叙事
+    MemoryLayer.ASSET.value: "narrative",  # 资产索引存 text，层归叙事
 }
 
 
@@ -77,9 +78,7 @@ class BackendMemoryStore(MemoryStore):
                 "valid_from": vfrom,
                 "valid_to": None,
                 # entries() parses recorded_at with isoformat — never store ""
-                "recorded_at": datetime.combine(
-                    date.fromisoformat(vfrom), datetime.min.time(), tzinfo=UTC
-                ).isoformat(),
+                "recorded_at": datetime.combine(date.fromisoformat(vfrom), datetime.min.time(), tzinfo=UTC).isoformat(),
                 "superseded_by": None,
                 "evidence": list(item.get("evidence") or ()),
                 "correction": False,
@@ -90,10 +89,9 @@ class BackendMemoryStore(MemoryStore):
         return count
 
     def _post_fact(self, person_id: str, entry_id: str, fact: dict[str, Any]) -> None:
-        evidence = [
-            {"type": "agent_evidence", "id": str(e)}
-            for e in (fact.get("evidence") or ())
-        ] or [{"type": "agent_evidence", "id": entry_id}]
+        evidence = [{"type": "agent_evidence", "id": str(e)} for e in (fact.get("evidence") or ())] or [
+            {"type": "agent_evidence", "id": entry_id}
+        ]
         result = self._backend.write_memory(
             str(person_id),
             {
@@ -123,11 +121,15 @@ class BackendMemoryStore(MemoryStore):
         material = f"propose:{person_id}:{hashlib.sha256(proposal.text.encode()).hexdigest()[:16]}"
         stable_id = _stable_entry_id(material, 0)
         object.__setattr__(proposal, "entry_id", stable_id)
-        batch = type("B", (), {
-            "batch_hash": stable_id,
-            "person_id": person_id,
-            "proposals": (proposal,),
-        })()
+        batch = type(
+            "B",
+            (),
+            {
+                "batch_hash": stable_id,
+                "person_id": person_id,
+                "proposals": (proposal,),
+            },
+        )()
         receipt = self.commit(batch)
         if receipt.rejected:
             return WriteReceipt(state=WriteState.REJECTED, reason="canonical_write_rejected")
@@ -160,7 +162,8 @@ class BackendMemoryStore(MemoryStore):
     def purge(self, scope) -> PurgeReceipt:
         layers = {layer.value for layer in scope.layers}
         target = [
-            eid for eid, row in self._facts.items()
+            eid
+            for eid, row in self._facts.items()
             if row["person_id"] == scope.person_id and (not layers or row["layer"] in layers)
         ]
         if scope.entry_ids:

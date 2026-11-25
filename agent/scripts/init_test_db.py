@@ -17,7 +17,6 @@ import os
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
-
 from storage.database.shared.model import Base
 
 TABLE_ORDER = ("memory_categories", "memories", "knowledge_collections")

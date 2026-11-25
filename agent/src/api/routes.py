@@ -127,9 +127,7 @@ def _brief_prompt(payload: dict | None) -> str:
     if not payload:
         return ""
     return "\n".join(
-        f"{label}{payload[key]}"
-        for key, label in _BRIEF_LABELS.items()
-        if str(payload.get(key) or "").strip()
+        f"{label}{payload[key]}" for key, label in _BRIEF_LABELS.items() if str(payload.get(key) or "").strip()
     )
 
 
@@ -168,7 +166,7 @@ def create_app(container: Container) -> FastAPI:
     if container.active_card is None:
         try:
             container.active_card = repository.load(DEFAULT_ROLE_ID)
-        except Exception:  # noqa: BLE001 —— 坏卡不阻断启动；单轮仍走安全默认人设
+        except Exception:  # noqa: BLE001, S110 —— 坏卡不阻断启动；单轮仍走安全默认人设
             pass
 
     def _auth(x_agent_token: str | None = Header(default=None)) -> None:
@@ -314,7 +312,7 @@ def create_app(container: Container) -> FastAPI:
         for role_id in repository.available():
             try:
                 card = repository.load(role_id)
-            except Exception:  # noqa: BLE001 - a broken asset must not hide the rest
+            except Exception:  # noqa: BLE001, S112 - a broken asset must not hide the rest
                 continue
             items.append(
                 {

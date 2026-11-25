@@ -319,7 +319,7 @@ class MemoryToolService:
             memory_id=memory_id,
             collection_id=collection_id,
             note=args.get("note", ""),
-            created_at=date.today().isoformat(),
+            created_at=date.today().isoformat(),  # noqa: DTZ011 —— 记忆链接按本地日历日
         )
         return _ok("link_memory_to_collection", record)
 
@@ -460,7 +460,7 @@ def _assert_public_http_url(url: str) -> None:
     if not host:
         raise ValueError("url_host_required")
     if (
-        host in {"localhost", "::1", "0.0.0.0"}
+        host in {"localhost", "::1", "0.0.0.0"}  # noqa: S104 —— 这是 SSRF 拒绝名单，不是绑定地址
         or host.startswith(("127.", "10.", "192.168.", "169.254."))
         or re.match(r"172\.(1[6-9]|2\d|3[01])\.", host)
     ):

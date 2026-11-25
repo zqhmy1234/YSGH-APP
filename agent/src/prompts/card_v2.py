@@ -70,7 +70,9 @@ def export_v2(card: RoleCard) -> dict[str, Any]:
             "scenario": source.get("scenario") or card.scenario,
             "first_mes": source.get("first_message") or card.first_message,
             "mes_example": source.get("example_dialogue") or _render_examples(examples),
-            "creator_notes": card.creator_notes or source.get("creator_notes") or "忆述光华导入导出格式；运行时使用内部 RoleCard",
+            "creator_notes": (
+                card.creator_notes or source.get("creator_notes") or "忆述光华导入导出格式；运行时使用内部 RoleCard"
+            ),
             "tags": [card.archetype, card.role_id],
             "creator": "忆述光华",
             "character_version": card.version,

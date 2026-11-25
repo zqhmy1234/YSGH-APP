@@ -116,7 +116,7 @@ class LingquGateway:
                 )
                 if should_fallback(error) and index < len(route.candidates) - 1:
                     continue
-                raise _to_port_error(error)
+                raise _to_port_error(error) from error
             self.telemetry.record(
                 profile_id=profile.id,
                 purpose=request.purpose,

@@ -150,6 +150,7 @@ def test_engine_uses_openai_prefix_for_company_gateway(monkeypatch):
     assert captured["model"] == f"openai/{profile.model}"
     assert captured["api_base"] == "http://127.0.0.1:4000/v1"
 
+
 def test_tool_calls_get_room_for_hidden_reasoning():
     """Reasoning models spend max_tokens on reasoning before emitting content.
 

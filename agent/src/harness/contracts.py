@@ -65,7 +65,7 @@ class AgentName(StrEnum):
 
 
 class VerdictStatus(StrEnum):
-    PASS = "pass"
+    PASS = "pass"  # noqa: S105 —— 判定枚举值，不是口令
     NEEDS_EVIDENCE = "needs_evidence"
     MASK = "mask"
     REJECT = "reject"
