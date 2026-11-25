@@ -24,6 +24,7 @@ M1 门禁（Top3≥70% + P95<3s）以规则兜底版本为基线。
 from __future__ import annotations
 
 import logging
+import os
 import time
 
 from app.core.config import settings
@@ -138,6 +139,40 @@ def _trace_num(trace, key: str) -> float:
         return 0.0
 
 
+def _class_routing_mode() -> str:
+    """类目路由模式（2026-11-25 实验用）：
+
+    - `hard`（默认）：保持原行为，`content_class` 硬过滤；
+    - `off`：不做类目过滤，测“去掉硬过滤”的召回上界；
+    - `soft`：不过滤，命中类目的候选 RRF 分 ×1.1（原型，仅用于对照）。
+    红线：只放松 `content_class` 这一条；user_id/软删/敏感/时间/地点仍是硬约束。
+    """
+    mode = os.environ.get("RAG_CLASS_ROUTING_MODE", "hard").lower()
+    return mode if mode in {"hard", "soft", "off"} else "hard"
+
+
+def _apply_class_soft_boost(hits: list[dict], class_filter: str) -> list[dict]:
+    """软路由原型：类目匹配的候选分数 ×1.1，然后重排（不改候选集）。"""
+    if not class_filter:
+        return hits
+    for h in hits:
+        if h.get("content_class") == class_filter:
+            h["score"] = round(float(h.get("score") or 0.0) * 1.1, 6)
+    return sorted(hits, key=lambda x: float(x.get("score") or 0.0), reverse=True)
+
+
+def _recall_limit() -> int:
+    """召回窗口（2026-11-25 消融用）：默认 50，行为与改动前等价。
+
+    仅用于评测/深度消融：`RAG_RECALL_LIMIT=20/50/100` 控制双路召回的 limit。
+    生产不设该环境变量即保持 50；它不是业务配置，不写进 config/env 模板。
+    """
+    try:
+        return max(1, int(os.environ.get("RAG_RECALL_LIMIT", "50")))
+    except ValueError:
+        return 50
+
+
 def search(q: SearchQuery, db=None, user_id: str | None = None, collection: str | None = None) -> SearchResult:
     """描述性搜索主链路（API-003/RET-001~018 前置）
 
@@ -191,9 +226,10 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
     # 修复（2026-08-25 调研）：类目判定跑【原始查询】而非改写结果——
     # 类别是用户意图属性，不应随改写漂移（改写版含"发酸"会误判 todo）。
     class_filter: str | None = None
-    if settings.class_routing_enabled and intent == "text":
+    routing_mode = _class_routing_mode()
+    if settings.class_routing_enabled and intent == "text" and routing_mode != "off":
         class_filter = _classify_query_intent(q.q)
-        if class_filter:
+        if class_filter and routing_mode == "hard":
             filters["content_class"] = class_filter
 
     # 3. 编码 + 召回
@@ -209,7 +245,7 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
             # 照片路 + 全量路并行召回 → 去重合并（详见 recall._mixed_recalls）
             raw_hits = _mixed_recalls(store, dense, sparse, filters, collection=collection)
         else:
-            raw_hits = store.search(dense, sparse, filters=filters, limit=50, collection=collection)
+            raw_hits = store.search(dense, sparse, filters=filters, limit=_recall_limit(), collection=collection)
         # 空结果回退（2026-08-19）：仅 NER 派生过滤导致空结果时，去掉 NER 过滤重试
         # （语料缺 place/tags 元数据时防"过过滤空结果"；显式参数仍是硬约束）
         if not raw_hits and ner_filters:
@@ -218,17 +254,23 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
             if intent == "mixed":
                 raw_hits = _mixed_recalls(store, dense, sparse, retry_filters, collection=collection)
             else:
-                raw_hits = store.search(dense, sparse, filters=retry_filters, limit=50, collection=collection)
+                raw_hits = store.search(
+                    dense, sparse, filters=retry_filters,
+                    limit=_recall_limit(), collection=collection,
+                )
             eff_filters = retry_filters
         # 空结果回退（P1-A 2026-08-25）：类目过滤导致空结果 → 去掉 content_class 重试
         # （旧数据/外部语料无 content_class 字段时防误过滤；显式参数仍是硬约束）
-        if not raw_hits and class_filter:
+        if not raw_hits and class_filter and routing_mode == "hard":
             retry_filters = {k: v for k, v in filters.items() if k != "content_class"}
             logger.info("类目过滤空结果，回退重试（去掉 content_class=%s）", class_filter)
             if intent == "mixed":
                 raw_hits = _mixed_recalls(store, dense, sparse, retry_filters, collection=collection)
             else:
-                raw_hits = store.search(dense, sparse, filters=retry_filters, limit=50, collection=collection)
+                raw_hits = store.search(
+                    dense, sparse, filters=retry_filters,
+                    limit=_recall_limit(), collection=collection,
+                )
             eff_filters = retry_filters
         # 3.3 P0-A 双路召回（2026-08-25 调研后重写）：LLM 改写是【加性】不是替代——
         # 原查询路永远保留（用 eff_filters，与主路同口径），改写路只增不减：
@@ -237,9 +279,12 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
         if rewritten != q.q and (q.q or "").strip():
             try:
                 orig_dense, orig_sparse = encode_query(q.q)
-                orig_hits = store.search(orig_dense, orig_sparse, filters=eff_filters, limit=50, collection=collection)
+                orig_hits = store.search(
+                    orig_dense, orig_sparse, filters=eff_filters,
+                    limit=_recall_limit(), collection=collection,
+                )
                 if orig_hits:
-                    raw_hits = _merge_recalls([raw_hits, orig_hits], limit=50)
+                    raw_hits = _merge_recalls([raw_hits, orig_hits], limit=_recall_limit())
             except Exception:  # noqa: BLE001 —— 原查询路失败不影响改写主路
                 logger.warning("原查询双路召回失败，仅用改写路", exc_info=True)
     except Exception as exc:  # noqa: BLE001 —— Qdrant 不可用降级（API-009）
@@ -277,12 +322,16 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
     # 明确存在于内容/标签/事件标题里的关键词就可能完全进不了候选。
     # 这里始终做一次显式字段召回并合并；精确通道只看 SearchQuery 的硬过滤，
     # 不套用 NER/分类器推断条件。
-    exact_hits = _pg_exact_search(q, db, user_id, limit=50)
+    exact_hits = _pg_exact_search(q, db, user_id, limit=_recall_limit())
     if exact_hits:
-        raw_hits = _merge_recalls([raw_hits, exact_hits], limit=50)
+        raw_hits = _merge_recalls([raw_hits, exact_hits], limit=_recall_limit())
 
     # 3.5 精确命中提升（词元全命中 → 提到稠密噪声之上；描述性查询不受影响）
     raw_hits = _boost_exact_matches(rewritten, raw_hits)
+
+    # 3.6 类目软路由原型（默认 hard 不执行；`RAG_CLASS_ROUTING_MODE=soft` 才生效）
+    if routing_mode == "soft" and class_filter and raw_hits:
+        raw_hits = _apply_class_soft_boost(raw_hits, class_filter)
 
     # 4. 溯源组装（RET-016：每条结果可解释命中字段）
     #    2026-10-30（P2 C-5）：按窗口取（offset>0 时要连前面几页的候选一起组装才能切片）

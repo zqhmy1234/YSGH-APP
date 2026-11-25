@@ -429,6 +429,7 @@ class VectorStore:
             if hit.payload:
                 details[pid]["text"] = hit.payload.get("text")
                 details[pid]["content_type"] = hit.payload.get("content_type")
+                details[pid]["content_class"] = hit.payload.get("content_class")
 
         for rank, hit in enumerate(sparse_hits, 1):
             pid = str(hit.payload.get("content_id", hit.id)) if hit.payload else str(hit.id)
@@ -438,6 +439,7 @@ class VectorStore:
             if hit.payload:
                 d["text"] = hit.payload.get("text")
                 d["content_type"] = d.get("content_type") or hit.payload.get("content_type")
+                d["content_class"] = d.get("content_class") or hit.payload.get("content_class")
 
         ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:limit]
         result = []
@@ -450,6 +452,7 @@ class VectorStore:
                 "sparse_score": round(d["sparse_score"], 4),
                 "text": d.get("text"),
                 "content_type": d.get("content_type"),
+                "content_class": d.get("content_class"),
             })
         return result
 
