@@ -7,8 +7,9 @@ from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 from app.db.session import engine
 from app.services.echo import delete_profile_sensitive, list_profile_sensitive, upsert_profile_sensitive
-from migrations.versions.b3a1c2d3e4f5_encrypt_profile_sensitive_topic import upgrade
-from sqlalchemy import text
+from migrations.versions import b3a1c2d3e4f5_encrypt_profile_sensitive_topic as encryption_migration
+from migrations.versions import c2e4f6a8b0d1_drop_profile_sensitive_plaintext as plaintext_exit
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 from scripts.backfill_profile_sensitive import backfill_batch, scan_profile_topics
@@ -16,7 +17,8 @@ from scripts.backfill_profile_sensitive import backfill_batch, scan_profile_topi
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("profile_crypto_keys")]
 
 
-def test_existing_rows_backfilled_without_overwriting_plaintext_rollback_copy():
+@pytest.fixture
+def sensitive_table():
     schema = "b3_test_" + uuid.uuid4().hex
     connection = engine.connect()
     transaction = connection.begin()
@@ -37,26 +39,66 @@ def test_existing_rows_backfilled_without_overwriting_plaintext_rollback_copy():
             text("INSERT INTO profile_sensitive(id,user_id,topic) VALUES(100,:uid,:topic)"),
             {"uid": uid, "topic": "前女友"},
         )
-        assert scan_profile_topics(connection) == (1, 0)
-        with Operations.context(MigrationContext.configure(connection)):
-            upgrade()
-        row = connection.execute(text(
-            "SELECT topic, topic_enc, topic_hash FROM profile_sensitive WHERE id=100"
-        )).mappings().one()
-        assert row["topic"] == "前女友"  # retained only during this rollout
-        assert row["topic_enc"].startswith("v1:") and "前女友" not in row["topic_enc"]
-        assert len(row["topic_hash"]) == 64
-        assert backfill_batch(connection) == 0  # resumable/idempotent
-        with Session(bind=connection, join_transaction_mode="create_savepoint") as db:
-            changed = upsert_profile_sensitive(db, uid, " 前女友 ", "caution")
-            assert changed.id == 100 and changed.topic == "前女友"
-            assert len(list_profile_sensitive(db, uid)) == 1
-            second_uid = str(uuid.uuid4())
-            separate = upsert_profile_sensitive(db, second_uid, "前女友")
-            assert separate.id != changed.id
-            assert delete_profile_sensitive(db, uid, "前女友") is True
-            assert delete_profile_sensitive(db, uid, "前女友") is False
-            assert len(list_profile_sensitive(db, second_uid)) == 1
+        yield connection, uid
     finally:
         transaction.rollback()
         connection.close()
+
+
+def test_existing_rows_backfilled_then_plaintext_retired(sensitive_table):
+    connection, uid = sensitive_table
+    assert scan_profile_topics(connection) == (1, 0)
+    with Operations.context(MigrationContext.configure(connection)):
+        encryption_migration.upgrade()
+    row = connection.execute(text(
+        "SELECT topic, topic_enc, topic_hash FROM profile_sensitive WHERE id=100"
+    )).mappings().one()
+    assert row["topic"] == "前女友"
+    assert row["topic_enc"].startswith("v1:") and "前女友" not in row["topic_enc"]
+    assert len(row["topic_hash"]) == 64
+    assert backfill_batch(connection) == 0
+
+    with Session(bind=connection, join_transaction_mode="create_savepoint") as db:
+        second_uid = str(uuid.uuid4())
+        separate = upsert_profile_sensitive(db, second_uid, "前女友")
+        assert separate.id != 100
+    assert connection.execute(text(
+        "SELECT count(*) FROM profile_sensitive WHERE topic IS NULL"
+    )).scalar_one() == 1
+
+    with Operations.context(MigrationContext.configure(connection)):
+        plaintext_exit.upgrade()
+    assert "topic" not in {col["name"] for col in inspect(connection).get_columns("profile_sensitive")}
+    assert scan_profile_topics(connection) == (2, 0)
+    assert connection.execute(text(
+        "SELECT topic_enc, topic_hash FROM profile_sensitive WHERE id=100"
+    )).one() == (row["topic_enc"], row["topic_hash"])
+
+    with Session(bind=connection, join_transaction_mode="create_savepoint") as db:
+        changed = upsert_profile_sensitive(db, uid, " 前女友 ", "caution")
+        assert changed.id == 100 and changed.topic == "前女友"
+        assert len(list_profile_sensitive(db, uid)) == 1
+        assert delete_profile_sensitive(db, second_uid, "前女友") is True
+        assert delete_profile_sensitive(db, second_uid, "前女友") is False
+        assert len(list_profile_sensitive(db, uid)) == 1
+
+    with Operations.context(MigrationContext.configure(connection)):
+        plaintext_exit.downgrade()
+    assert connection.execute(text("SELECT topic FROM profile_sensitive WHERE id=100")).scalar_one() is None
+    with Operations.context(MigrationContext.configure(connection)):
+        plaintext_exit.upgrade()
+
+
+@pytest.mark.parametrize(("statement", "message"), [
+    ("UPDATE profile_sensitive SET topic_enc = 'v1:invalid'", "invalid encrypted topic"),
+    ("UPDATE profile_sensitive SET topic_hash = 'invalid'", "mismatched topic hash"),
+    ("UPDATE profile_sensitive SET topic = 'different'", "plaintext does not match"),
+])
+def test_plaintext_exit_rejects_inconsistent_rows(sensitive_table, statement, message):
+    connection, _ = sensitive_table
+    with Operations.context(MigrationContext.configure(connection)):
+        encryption_migration.upgrade()
+        connection.execute(text(statement))
+        with pytest.raises(RuntimeError, match=message):
+            plaintext_exit.upgrade()
+    assert "topic" in {col["name"] for col in inspect(connection).get_columns("profile_sensitive")}

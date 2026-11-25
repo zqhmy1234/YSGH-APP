@@ -5,14 +5,16 @@
 > **只准引用，不准复述**（历史上正是"五处各写一份数字"导致漂移）。
 > **每个会话结束前必须更新本文件**：流水写 `progress.md`（追加式），决策写 `docs/决策台账.md`。
 
-**最后更新**：2026-11-24
-**分支**：`feature/agent-v3-harness` ｜ **最近提交**：以 `git log -1 --oneline` 为准
+**最后更新**：2026-11-25
+**分支**：以 `git branch --show-current` 为准 ｜ **最近提交**：以 `git log -1 --oneline` 为准
 （历史批次进展见 `git log`——此处**故意不写提交条数**：本行随每次更新滞后一次，
 写死数字必然失真，正是本项目反复吃亏的"数字漂移"。想知道精确次数：`git log --oneline --since=midnight`）
 
 ---
 
 ## 正在做什么
+
+**2026-11-25 后端 B-3 步骤 8**：本地 `develop` 已快进至 `6c2a02d`。观察期已届满，生产只读复核 API/worker 和密钥一致性，敏感话题表仍为 0 行，旧 `topic` 列存在。生产 API 与常驻 worker 都仍映射旧列，生产库为 `e7b8c9d0e1f2`。已完成本地独立删列、B-3 迁移前校验及今日备份的 D 盘副本恢复、升级、回退和重升。B-3 定向回归通过。基线修复见 `24d10ec`。发布候选本地全量门禁通过，1,658 项测试通过，覆盖率 84.85%。发布候选的 GitHub 门禁见对应 PR。正式发布先核准前置的 B-4/B-6 基线及 API/worker/cron 切换，待发布提交的门禁通过并获用户部署确认后才执行生产迁移。证据和发布顺序见 `docs/后端步骤8_明文列退出演练_20261125.md`。
 
 **2026-11-24 B7“有人味”改造已落到代码（最新）**：六张角色卡改成六个人（小忆/忆生/阿静/阿言/小树/阿册），每张有人物叙述、2–3 段示例对话、生活条目、作者手记、完整禁语和记忆边界；`render()` 不再渲染 `traits` 数字、`creator_notes`、`source_profile`。后端 `user_ai_persona` 改为 `initiative/density/advice_bias` 三组关系约定，新增迁移 `e7b8c9d0e1f2`，`GET/PUT /api/v1/persona` 与 `/options` 返回完整段落。新增 `ResponseBrief` 七段完整回应说明，替代情绪标签/置信度。非流式与流式聊天都已把 `persona{role_id,relationship_note,version}` 和 `response_brief` 传给 Agent；Agent 按请求加载角色卡，上下文升为十段（关系约定 + 人物卡 + 回应说明）。设置页新增“她怎么陪你”，六张卡 + 三组完整句子 + 保存；访谈页/RecordSheet 的情绪 chip 已移除。验证：Agent 全量 **337 passed / 2 skipped**；`review_agent.py --full --skip-tests` **passed**（openapi 已重导、结构棘轮通过；HBuilderX 缺失降级放行；backup 域 WARN 不阻断）。**2026-11-24 02:30–03:45 追加收口**：本机已起完整 L0（Colima + PG16/pgvector + Redis + Qdrant + MinIO + agent + backend + worker），`alembic upgrade head` 在真库执行到 **`e7b8c9d0e1f2`** 且 `alembic check` 无漂移；后端全量 **1332 passed / 22 deselected**；BGE-M3 权重（2,271,145,830 字节）落盘并只读挂载，检索不再降级；后端→Agent 真实对话打通（回复引用 `[S1]`），Agent→后端 `/api/v1/search/agent` 200；服务器 `docker compose` 插件已修（原 HTML → v5.8.0 ELF），5 个探针测试 Key 已清理。**仍未做**：服务器 staging :8300 切流、服务器 backend 升级、客户端 HBuilderX 编译；五家 provider 仍只有 DeepSeek 真通。证据见 `docs/agent-v3/verification-evidence.md` / `local-l0-docker.md`。下一步：按 A 方案拆 4 个 commit → 推送 → 再做发布切换。
 
@@ -138,7 +140,7 @@
 0. **Agent G0/G1 收口**：T1 已通过；下一步推送分支并确认 `agent-gate`，随后补真机
    三项 A 级。未完成前不进入产品场景 A。
 0. **等待用户完成 104 云打包**：装包后按 `36_W43遗留项收口与104前置_20261028.md` 完成 IN-06～IN-08、照片历史 GPS、蜂窝暂缓、冷启动 401、D-18/D-19 后台同步及四项包尸检，再回填 C-5/C-6。
-0. **当前后端 B 批**：代码同步已完成；按 `docs/后端分步完成计划书_20261110.md` 步骤 0 核对环境和实机拓扑，随后优先立即备份、隔离恢复与备份 cron，再收口四条业务 cron。B-3 先做副本与密钥保管演练、记录发布观察起点；观察期内按顺序处理 D/E/F/G 数据和三个评测器，护栏评测器供 B-4/B-5 共用；满一个发布周期后独立删除旧 `topic` 列。任务验收与暂停条件均以计划书为执行入口，决策边界见台账 §21/§22。
+0. **后端 B-3**：核对发布候选同 SHA 的 GitHub 门禁。待用户确认部署后先切换读写进程，再独立执行旧 `topic` 列退出迁移。
 1. **批次 B（进行中）· entry 流最小闭环**：「今天」锚点 + 记录后立刻可见（时间轴读 `contents`，事件只做增强）
 2. **批次 C · 回顾位**：那年今日（今天卡下）+ 每日回顾（接回响/消息链）
 3. **批次 D · 搜索形态重做**：`/search` 加可选 `answer` → 回答卡 + 用户维度筛选 + 可解释结果 + 历史/继续

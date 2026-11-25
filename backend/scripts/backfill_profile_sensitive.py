@@ -9,25 +9,29 @@ batch; re-running it skips rows already filled.
 import argparse
 
 from app.services.profile_sensitive_crypto import decrypt_topic, encrypt_topic, topic_digest
-from sqlalchemy import inspect, text
+from sqlalchemy import bindparam, column, inspect, null, select, table, text
 
 
 def scan_profile_topics(connection, batch_size: int = 500) -> tuple[int, int]:
     """Return (row count, normalized duplicate count) without exposing values."""
     columns = {col["name"] for col in inspect(connection).get_columns("profile_sensitive")}
-    has_cipher = "topic_enc" in columns
+    topics = table("profile_sensitive", column("id"), column("user_id"), column("topic"), column("topic_enc"))
+    query = (
+        select(
+            topics.c.id,
+            topics.c.user_id,
+            topics.c.topic if "topic" in columns else null().label("topic"),
+            topics.c.topic_enc if "topic_enc" in columns else null().label("topic_enc"),
+        )
+        .where(topics.c.id > bindparam("last_id"))
+        .order_by(topics.c.id)
+        .limit(bindparam("limit"))
+    )
     seen: set[tuple[str, str]] = set()
     total = duplicates = last_id = 0
     while True:
-        query = (
-            "SELECT id, user_id, topic, topic_enc FROM profile_sensitive "
-            "WHERE id > :last_id ORDER BY id LIMIT :limit"
-            if has_cipher else
-            "SELECT id, user_id, topic, NULL AS topic_enc FROM profile_sensitive "
-            "WHERE id > :last_id ORDER BY id LIMIT :limit"
-        )
         rows = connection.execute(
-            text(query),
+            query,
             {"last_id": last_id, "limit": batch_size},
         ).mappings().all()
         if not rows:
@@ -82,6 +86,8 @@ def main() -> None:
         columns = {col["name"] for col in inspect(connection).get_columns("profile_sensitive")}
         if not {"topic_enc", "topic_hash"}.issubset(columns):
             raise SystemExit("Run the additive Alembic migration before --apply")
+        if "topic" not in columns:
+            raise SystemExit("The legacy topic column has already been retired")
     filled = 0
     while True:
         with engine.begin() as connection:
