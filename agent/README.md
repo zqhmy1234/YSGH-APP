@@ -63,20 +63,17 @@ cp .env.example .env
 
 ## 测试
 
-单元测试可在没有数据库时运行，但真实 PostgreSQL 集成测试需要隔离测试库。
-测试库名称必须包含 `test`，初始化脚本会拒绝连接其他数据库。
+单元测试不依赖数据库：PG 适配器（`adapters/pg_memory.py`）的用例用假连接，
+不需要起 PostgreSQL。
 
 ```powershell
-# 先启动一个隔离 PostgreSQL，再设置 DATABASE_URL
-$env:DATABASE_URL = "postgresql+psycopg://postgres:<PASSWORD>@127.0.0.1:5432/yishu_agent_test"
 $env:AGENT_SERVICE_TOKEN = "<LOCAL_TEST_TOKEN>"
 $env:PYTHONPATH = "src"
 
-.\.venv\Scripts\python.exe scripts\init_test_db.py
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-仓库 CI 使用独立 PostgreSQL service 和同一个初始化脚本。测试失败时不要用
+测试失败时不要用
 “历史 194 passed”替代当日结果。
 
 ## 接口
