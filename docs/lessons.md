@@ -9,6 +9,24 @@
 
 ---
 
+### 2026-11-25 11:42 · commit 39ba857 · ts=1795578162
+- **错误**：并发同键双写测试抛 UniqueViolation：uq_memories_user_hash_bucket
+- **根因**：SELECT 判重与 INSERT 之间的 TOCTOU；部分唯一索引是最终裁决，但代码未把 IntegrityError 当正常并发路径接住
+- **修复**：旧表写入包进 savepoint；冲突后回滚 savepoint 并重读赢家已提交行，收敛为同一 memory
+- **相关文件**：backend/app/domain/memory/ledger.py; backend/tests/test_b5_adversarial.py
+- **教训**：一旦定义了唯一索引，写入方就必须处理 IntegrityError 并重读，而不是假设 SELECT 判重已足够
+
+---
+
+### 2026-11-25 11:42 · commit 39ba857 · ts=1795578161
+- **错误**：合并 B4-B7 后，消息已读接口全部 404（MSG_002）；agent 契约用例报 403/文案不符
+- **根因**：load_owned_entity 新加的 UUID 格式预检无条件套到所有模型，而 messages.id 是 BigInteger；agent 契约测试未随 B6 授权闸与 B5 memory 写路径更新
+- **修复**：仅当主键列类型是 Uuid 才做格式预检；契约测试补 Session.get/scalar 替身与已授权默认，更新 EXPECTED 路由清单
+- **相关文件**：backend/app/api/deps.py; backend/tests/agent_contract/
+- **教训**：通用 loader 的类型假设要从模型列类型推导，不能对全表写死 UUID
+
+---
+
 ### 2026-11-25 11:09 · commit c7edf5b · ts=1795576164
 - **错误**：合入 origin/develop 的 28 个提交后，review_agent --full --skip-tests 报 lint 31 条 + openapi_snapshot/audit_axes 红
 - **根因**：远程 B4-B6/B7 代码未在本机重过静态门：response_brief.py 整句中文超 120 列、chat.py 未用导入、B6 测试导入未排序/lambda/超长行、deploy 脚本 S310/PLW0603；新增 7 条 trust/echo 路由未重导 docs/openapi.json

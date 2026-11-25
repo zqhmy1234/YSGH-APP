@@ -21,6 +21,7 @@ from datetime import UTC, date, datetime
 from typing import Any, Protocol, runtime_checkable
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.models.memory import MemoryEntry
@@ -153,8 +154,17 @@ class MemoryWritePort:
                 dedup_bucket=int(time.time() // _DEDUP_WINDOW_SECONDS),
                 importance=3,
             )
-            db.add(old)
-            db.flush()
+            try:
+                # 并发同键：部分唯一索引 uq_memories_user_hash_bucket 是最终裁决。
+                # 失败方回滚 savepoint 后重读赢家已提交的行，收敛到同一条——
+                # 不让「SELECT 判重 → INSERT」之间的 TOCTOU 变成调用方错误。
+                with db.begin_nested():
+                    db.add(old)
+                    db.flush()
+            except IntegrityError:
+                old = self._find_old_duplicate(db, user_id=user_id, text=text)
+                if old is None:
+                    raise
         old_id = old.id
 
         if not self.dual_write_enabled:

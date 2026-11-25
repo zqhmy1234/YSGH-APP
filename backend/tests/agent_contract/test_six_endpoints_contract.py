@@ -26,6 +26,9 @@ EXPECTED = {
     ("DELETE", "/api/v1/persons/agent/{person_id}"),
     ("POST", "/api/v1/echo/agent"),
     ("GET", "/api/v1/memory/agent"),
+    # B5 canonical ledger 的写/删路径（agent BackendHTTP.write_memory/delete_memory）
+    ("POST", "/api/v1/memory/agent"),
+    ("DELETE", "/api/v1/memory/agent/{entry_id}"),
     ("GET", "/api/v1/persona/agent"),
 }
 # The plan's six business endpoints; the persons GET is the read pair of the

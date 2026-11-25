@@ -35,14 +35,31 @@ class _Result:
         return []
 
 
+class _GrantedConsent:
+    """B6 授权闸的测试替身：默认视为已授权（未授权路径见 trust 域测试）。"""
+
+    state = "granted"
+
+
 class _DB:
     def __init__(self, profile=None):
         self._profile = profile
         self.added = []
         self.committed = False
 
-    def execute(self, *args, **kwargs):
+    def execute(self, statement=None, *args, **kwargs):
+        # B6：agent 端点先查 consent_grant。默认放行，才能覆盖 digest/person 的业务路径。
+        if statement is not None and "consent_grant" in str(statement):
+            return _Result(_GrantedConsent())
         return _Result(self._profile)
+
+    def get(self, model, key):
+        """echo 的 _load_preference 走 Session.get；无行 = 建表默认。"""
+        return None
+
+    def scalar(self, *args, **kwargs):
+        """echo 的 _daily_shown 走 Session.scalar；0 = 当天未展示。"""
+        return 0
 
     def add(self, row):
         self.added.append(row)
