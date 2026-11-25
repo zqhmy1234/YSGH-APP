@@ -1,0 +1,206 @@
+# ============================================================================
+# L0 · Agent V3 真接线（2026-11-23）
+#
+# 目标：一条命令拉起 V3 真正依赖的 L0 —— PostgreSQL(pgvector)、Redis、Qdrant、
+# MinIO（对象存储），以及 V3 agent 自己（Lingqu 模型网关 + 13 工具服务）。
+#
+# 用法（仓库根）：
+#   docker compose -f deploy/compose.agent-v3.yml up -d --build
+#   bash scripts/dev/agent_v3_smoke.sh
+#   docker compose -f deploy/compose.agent-v3.yml down
+#
+# 可选：`--profile app` 同时拉起 backend / worker（复用 deploy/Dockerfile.backend）。
+# 所有端口只绑 127.0.0.1；模型 Key 从宿主环境注入，永不写进本文件。
+# ============================================================================
+name: yishu-v3
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
+    container_name: yishu-v3-postgres
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-v3-only}
+      POSTGRES_DB: ${POSTGRES_DB:-yishu}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - max_connections=50
+    ports:
+      - "127.0.0.1:${V3_POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - ./data/agent-v3/postgres:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-yishu}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    container_name: yishu-v3-redis
+    restart: unless-stopped
+    logging: *default-logging
+    command: >
+      redis-server --appendonly yes --appendfsync everysec
+      --maxmemory 256mb --maxmemory-policy noeviction
+    ports:
+      - "127.0.0.1:${V3_REDIS_PORT:-56379}:6379"
+    volumes:
+      - ./data/agent-v3/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  qdrant:
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:v1.19.0}
+    container_name: yishu-v3-qdrant
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "127.0.0.1:${V3_QDRANT_HTTP_PORT:-56333}:6333"
+      - "127.0.0.1:${V3_QDRANT_GRPC_PORT:-56334}:6334"
+    volumes:
+      - ./data/agent-v3/qdrant:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "bash", "-c", ":> /dev/tcp/localhost/6333"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-04-22T22-12-26Z}
+    container_name: yishu-v3-minio
+    restart: unless-stopped
+    logging: *default-logging
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-yishu}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-local-v3-only-change-me}
+    ports:
+      - "127.0.0.1:${V3_MINIO_PORT:-59000}:9000"
+      - "127.0.0.1:${V3_MINIO_CONSOLE_PORT:-59001}:9001"
+    volumes:
+      - ./data/agent-v3/minio:/data
+
+  agent-v3:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.agentv3
+    image: yishu-agent-v3:local
+    container_name: yishu-v3-agent
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      AGENTV3_MEMORY_PATH: /data/agent_v3.sqlite
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-local-v3-only}@postgres:5432/${POSTGRES_DB:-yishu}
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-yishu}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-local-v3-only-change-me}
+      # 默认 DeepSeek；公司统一 Key 由宿主导出后注入，绝不写在此处。
+      LINGQU_DEFAULT_PROFILE: ${LINGQU_DEFAULT_PROFILE:-deepseek/deepseek-v4.1-flash}
+      COMPANY_LLM_API_KEY: ${COMPANY_LLM_API_KEY:-}
+      COMPANY_LLM_BASE_URL: ${COMPANY_LLM_BASE_URL:-}
+      LINGQU_SELECTION_PATH: /data/lingqu-selection.json
+      # Agent → backend L3 endpoints (search/events). Inside the compose network
+      # the backend service name is stable; ``INTERNAL_TOKEN`` must equal the
+      # backend's ``AGENT_SERVICE_TOKEN`` for agent_service_user() to accept it.
+      BACKEND_BASE_URL: ${BACKEND_URL:-http://backend:8010}
+      SEARCH_BASE_URL: ${AGENT_SEARCH_BASE_URL:-http://backend:8010}
+      EVENT_BASE_URL: ${AGENT_EVENT_BASE_URL:-http://backend:8010}
+      # One secret, both directions: the backend sends it as X-Agent-Token and
+      # the agent validates it against AGENT_V3_TOKEN. Deriving both from the
+      # same variable makes drift impossible (a mismatch is a silent 401).
+      INTERNAL_TOKEN: ${AGENT_SERVICE_TOKEN:-local-agent-service-token}
+      AGENT_V3_TOKEN: ${AGENT_SERVICE_TOKEN:-local-agent-service-token}
+    # The local LiteLLM gateway on the host listens on 127.0.0.1 only; this maps
+    # `host.docker.internal` to the Docker host gateway so the container can
+    # reach it without exposing the gateway on a public interface.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${V3_AGENT_PORT:-8300}:8300"
+    volumes:
+      - ./data/agent-v3/agent:/data
+
+  backend:
+    profiles: ["app"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+    image: yishu-backend:local
+    container_name: yishu-v3-backend
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-local-v3-only}@postgres:5432/${POSTGRES_DB:-yishu}
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      AGENT_SERVICE_BASE_URL: http://agent-v3:8300
+      # Same shared secret the agent sends as X-Agent-Token; without it every
+      # agent-facing L3 endpoint fails closed with 503.
+      AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:-local-agent-service-token}
+      APP_ENV: development
+      # Models are mounted, never baked into the image (BGE-M3 is ~2.2GB).
+      # Offline mode makes a missing mount fail loudly instead of silently
+      # trying to reach huggingface.co (which is unreachable from this network).
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      EMBEDDING_FALLBACK_LOCAL: "true"
+    volumes:
+      - ../backend/models:/app/models:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${V3_API_PORT:-8010}:8010"
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8010", "--workers", "1"]
+
+  worker:
+    profiles: ["app"]
+    image: yishu-backend:local
+    container_name: yishu-v3-worker
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-local-v3-only}@postgres:5432/${POSTGRES_DB:-yishu}
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      EMBEDDING_FALLBACK_LOCAL: "true"
+    volumes:
+      - ../backend/models:/app/models:ro
+    depends_on:
+      - backend
+    command: ["python", "-m", "app.workers.worker"]

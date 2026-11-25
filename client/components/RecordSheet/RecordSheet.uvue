@@ -374,9 +374,6 @@
 
 	const voiceDiag = computed((): string => {
 		const parts: Array<string> = []
-		if (emotion.value != '') {
-			parts.push('情绪：' + emotion.value)
-		}
 		if (voiceHints.value != '') {
 			parts.push(voiceHints.value)
 		}
@@ -657,7 +654,6 @@
 		classifyGen = classifyGen + 1
 		transcript.value = ''
 		aiLabel.value = ''
-		emotion.value = ''
 		voiceHints.value = ''
 		guardMsg.value = ''
 		lastVoiceDuration.value = 0
@@ -1001,7 +997,6 @@
 	const transcribing = vr.transcribing
 	const transcribeFailed = vr.transcribeFailed
 	const transcript = vr.transcript
-	const emotion = vr.emotion
 	const guardMsg = vr.guardMsg
 	const lastVoiceDuration = vr.lastVoiceDuration
 	const lastVoiceFile = vr.lastVoiceFile

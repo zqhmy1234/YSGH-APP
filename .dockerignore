@@ -1,0 +1,33 @@
+# Shared build context excludes for BOTH images:
+#   - agent image: context repo root, dockerfile deploy/Dockerfile.agentv3
+#   - backend image: context repo root, dockerfile deploy/Dockerfile.backend
+# Heavy local state is excluded; source directories stay so either Dockerfile can
+# COPY what it needs (each image only copies its own subtree).
+.git
+.gitignore
+.cowork-temp
+.tmp-migration
+archive
+client
+research
+deploy/data
+deploy/download
+docs/*
+!docs/画像维度枚举集_l0.json
+!docs/画像维度枚举集_l1_骨架.json
+backend/.venv*
+backend/models
+backend/data
+backend/runs
+backend/.env
+backend/.env.*
+backend/**/__pycache__
+backend/**/*.pyc
+agent/.venv*
+agent/models
+agent/vendor
+agent/tests
+agent/.pytest_cache
+agent/**/__pycache__
+agent/**/*.pyc
+**/.DS_Store

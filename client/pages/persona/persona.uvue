@@ -1,0 +1,285 @@
+<template>
+	<view class="page-root">
+		<view class="top">
+			<text class="back" @tap="goBack">‹</text>
+			<text class="title">她怎么陪你</text>
+		</view>
+		<scroll-view class="body" direction="vertical" :show-scrollbar="false">
+			<view class="lead">
+				<text class="lead-text">先选一个人，再选你们怎么相处。她是谁、她的禁忌和记忆边界不会因为下面三组选择而改变。</text>
+			</view>
+
+			<view class="section">
+				<text class="section-title">她是谁</text>
+				<view v-for="role in roles" :key="role.role_id" class="role" :class="selectedRole == role.role_id ? 'role active' : 'role'" @tap="selectRole(role.role_id)">
+					<text class="role-name">{{ role.display_name }}</text>
+					<text class="role-intro">{{ role.intro }}</text>
+				</view>
+			</view>
+
+			<view v-for="(q, qIndex) in questions" :key="q.question" class="section">
+				<text class="section-title">{{ q.question }}</text>
+				<view v-for="(opt, oIndex) in q.options" :key="opt" class="choice" :class="choiceIndex(qIndex) == oIndex ? 'choice active' : 'choice'" @tap="selectChoice(qIndex, oIndex)">
+					<text class="choice-text">{{ opt }}</text>
+				</view>
+			</view>
+
+			<view class="section">
+				<text class="section-title">现在她对你说的话</text>
+				<text class="preview">{{ preview }}</text>
+			</view>
+
+			<view class="save" :class="saving ? 'save disabled' : 'save'" @tap="onSave">
+				<text class="save-text">{{ saving ? '保存中…' : '就这样' }}</text>
+			</view>
+			<view class="bottom-space"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { onMounted } from 'vue'
+	import { fetchPersona, fetchPersonaOptions, savePersona } from '@/utils/persona_api'
+
+	class PersonaRole {
+		role_id: string
+		display_name: string
+		intro: string
+
+		constructor(roleId: string, name: string, intro: string) {
+			this.role_id = roleId
+			this.display_name = name
+			this.intro = intro
+		}
+	}
+
+	class PersonaQuestion {
+		question: string
+		options: Array<string>
+
+		constructor(question: string, options: Array<string>) {
+			this.question = question
+			this.options = options
+		}
+	}
+
+	let roles = ref<Array<PersonaRole>>([])
+	let questions = ref<Array<PersonaQuestion>>([])
+	let selectedRole = ref('gentle-friend')
+	let initiative = ref(0)
+	let density = ref(0)
+	let adviceBias = ref(0)
+	let preview = ref('')
+	let saving = ref(false)
+
+	function goBack(): void {
+		const pages = getCurrentPages()
+		if (pages.length > 1) {
+			uni.navigateBack({ delta: 1 })
+		} else {
+			uni.reLaunch({ url: '/pages/settings/settings' })
+		}
+	}
+
+	function choiceIndex(qIndex: number): number {
+		if (qIndex == 0) return initiative.value
+		if (qIndex == 1) return density.value
+		return adviceBias.value
+	}
+
+	function selectRole(roleId: string): void {
+		selectedRole.value = roleId
+	}
+
+	function selectChoice(qIndex: number, oIndex: number): void {
+		if (qIndex == 0) initiative.value = oIndex
+		else if (qIndex == 1) density.value = oIndex
+		else adviceBias.value = oIndex
+	}
+
+	function loadOptions(): void {
+		fetchPersonaOptions().then((d: UTSJSONObject | null) => {
+			if (d == null) return
+			const rawRoles = d.getArray('role_cards')
+			if (rawRoles != null) {
+				const list: Array<PersonaRole> = []
+				for (let i = 0; i < rawRoles.length; i++) {
+					const item = rawRoles[i] as UTSJSONObject
+					list.push(new PersonaRole(
+						item.getString('role_id') ?? '',
+						item.getString('display_name') ?? '',
+						item.getString('intro') ?? ''
+					))
+				}
+				roles.value = list
+			}
+			const rawQuestions = d.getArray('questions')
+			if (rawQuestions != null) {
+				const list: Array<PersonaQuestion> = []
+				for (let i = 0; i < rawQuestions.length; i++) {
+					const item = rawQuestions[i] as UTSJSONObject
+					const rawOptions = item.getArray('options')
+					const opts: Array<string> = []
+					if (rawOptions != null) {
+						for (let j = 0; j < rawOptions.length; j++) {
+							opts.push(rawOptions[j] as string)
+						}
+					}
+					list.push(new PersonaQuestion(item.getString('question') ?? '', opts))
+				}
+				questions.value = list
+			}
+		})
+	}
+
+	function loadCurrent(): void {
+		fetchPersona().then((d: UTSJSONObject | null) => {
+			if (d == null) return
+			selectedRole.value = d.getString('role_id') ?? 'gentle-friend'
+			const c = d.getJSON('choices')
+			if (c != null) {
+				initiative.value = c.getNumber('initiative') ?? 0
+				density.value = c.getNumber('density') ?? 0
+				adviceBias.value = c.getNumber('advice_bias') ?? 0
+			}
+			preview.value = d.getString('relationship_note') ?? ''
+		})
+	}
+
+	function onSave(): void {
+		if (saving.value) return
+		saving.value = true
+		savePersona(Math.round(initiative.value), Math.round(density.value), Math.round(adviceBias.value), selectedRole.value).then((d: UTSJSONObject | null) => {
+			saving.value = false
+			if (d == null) return
+			preview.value = d.getString('relationship_note') ?? ''
+			uni.showToast({ title: '已保存', icon: 'success' })
+		})
+	}
+
+	onMounted((): void => {
+		loadOptions()
+		loadCurrent()
+	})
+</script>
+
+<style>
+	.page-root {
+		flex: 1;
+		flex-direction: column;
+		background-color: var(--c-paper-100, #F8F7F4);
+	}
+	.top {
+		flex-direction: row;
+		align-items: center;
+		padding-left: var(--d-lattice-p16, 30.8rpx);
+		padding-right: var(--d-lattice-p16, 30.8rpx);
+		padding-top: var(--d-lattice-p60, 115.4rpx);
+		padding-bottom: var(--d-lattice-p12, 23.1rpx);
+	}
+	.back {
+		width: var(--d-lattice-p22, 42.3rpx);
+		font-size: var(--d-lattice-p22, 42.3rpx);
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.title {
+		flex: 1;
+		text-align: center;
+		font-size: var(--d-lattice-p18, 34.6rpx);
+		font-weight: 600;
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.body {
+		flex: 1;
+		padding-left: var(--d-card_margin_x, 38.5rpx);
+		padding-right: var(--d-card_margin_x, 38.5rpx);
+	}
+	.lead {
+		padding: var(--d-card_radius_small, 23.1rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+	}
+	.lead-text {
+		font-size: var(--d-lattice-p13, 25rpx);
+		line-height: 1.7;
+		color: var(--c-ink-500, #7A6A5A);
+	}
+	.section {
+		margin-top: var(--d-card_margin_x, 38.5rpx);
+		flex-direction: column;
+	}
+	.section-title {
+		margin-bottom: var(--d-card_radius_small, 23.1rpx);
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		font-weight: 600;
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.role {
+		margin-bottom: var(--d-card_radius_small, 23.1rpx);
+		padding: var(--d-card_radius_small, 23.1rpx);
+		flex-direction: column;
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+		border-width: 2rpx;
+		border-style: solid;
+		border-color: var(--c-white, #FFFFFF);
+	}
+	.role.active {
+		border-color: var(--c-rust-500, #B05A3A);
+	}
+	.role-name {
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		font-weight: 600;
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.role-intro {
+		margin-top: var(--d-lattice-p6, 11.5rpx);
+		font-size: var(--d-lattice-p13, 25rpx);
+		line-height: 1.6;
+		color: var(--c-ink-500, #7A6A5A);
+	}
+	.choice {
+		margin-bottom: var(--d-card_radius_small, 23.1rpx);
+		padding: var(--d-card_radius_small, 23.1rpx);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+		border-width: 2rpx;
+		border-style: solid;
+		border-color: var(--c-white, #FFFFFF);
+	}
+	.choice.active {
+		border-color: var(--c-rust-500, #B05A3A);
+		background-color: var(--c-paper-200, #F1EEE8);
+	}
+	.choice-text {
+		font-size: var(--d-lattice-p13, 25rpx);
+		line-height: 1.6;
+		color: var(--c-ink-900, #3A2E25);
+	}
+	.preview {
+		padding: var(--d-card_radius_small, 23.1rpx);
+		font-size: var(--d-lattice-p13, 25rpx);
+		line-height: 1.7;
+		color: var(--c-ink-500, #7A6A5A);
+		background-color: var(--c-white, #FFFFFF);
+		border-radius: var(--d-card_margin_x, 38.5rpx);
+	}
+	.save {
+		margin-top: var(--d-card_margin_x, 38.5rpx);
+		height: var(--d-search_height, 88.5rpx);
+		align-items: center;
+		justify-content: center;
+		background-color: var(--c-rust-500, #B05A3A);
+		border-radius: var(--d-fab_radius, 53.8rpx);
+	}
+	.save.disabled {
+		opacity: 0.6;
+	}
+	.save-text {
+		font-size: var(--d-lattice-p15, 28.8rpx);
+		color: var(--c-white, #FFFFFF);
+	}
+	.bottom-space {
+		height: var(--d-card_margin_x, 38.5rpx);
+	}
+</style>

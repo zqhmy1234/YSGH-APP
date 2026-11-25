@@ -58,6 +58,14 @@
 			}
 		},
 		{
+			"path": "pages/persona/persona",
+			"style": {
+				"navigationBarTitleText": "她怎么陪你",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": false
+			}
+		},
+		{
 			"path": "pages/account/security",
 			"style": {
 				"navigationBarTitleText": "账号与安全",

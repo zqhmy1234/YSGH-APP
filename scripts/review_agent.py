@@ -128,7 +128,19 @@ def _lint_skip(path: str) -> bool:
     登记见 docs/决策台账.md §4.12 与排期「Agent 接线批」AG7。
     """
     p = path.replace("\\", "/")
-    return p == "agent" or p.startswith("agent/")
+    # archive/ 是 2026-11-23 按用户口径整包归档的旧 Agent（原样封存，不再维护）；
+    # 语法/密钥仍扫，但历史 lint 债不再逐条修——否则每次动归档都要改封存件。
+    return (
+        p == "agent"
+        or p.startswith("agent/")
+        or p == "archive"
+        or p.startswith("archive/")
+        # 下载的第三方角色卡研究仓（原样 vendor，MIT/CC BY 4.0），不参与本仓 lint
+        or p.startswith("research/character-cards/foreverse-character-card-skills/")
+        # 架构图文档的生成脚本（matplotlib 画图，非运行时），不纳入代码 lint
+        or p.startswith("docs/架构图/")
+        or p.endswith("/_gen.py")
+    )
 
 
 def _git_files(cached: bool) -> list[str]:
@@ -138,7 +150,7 @@ def _git_files(cached: bool) -> list[str]:
     不出现于快模式 diff（git 视之为 R 而非 A），导致 rename 的文件漏过 syntax/lint/
     secrets 扫描；加入 R 后与全量模式（rglob 覆盖仓库全部）语义一致。
     """
-    args = ["git", "diff", "--name-only", "--diff-filter=ACMR"]
+    args = ["git", "-c", "core.quotepath=false", "diff", "--name-only", "--diff-filter=ACMR"]
     if cached:
         args.insert(2, "--cached")
     code, out = run(args)
@@ -182,7 +194,7 @@ def _scope_files(full: bool) -> tuple[list[str], list[str], list[str]]:
         p for p in _repo_text_candidates()
         if p.endswith(".py") and not _skip_path(Path(p).parts)
     ]
-    code, ls = run(["git", "ls-files", "--", "*.py"])
+    code, ls = run(["git", "-c", "core.quotepath=false", "ls-files", "--", "*.py"])
     tracked = [p for p in (ls.splitlines() if code == 0 and ls.strip() else []) if p.strip()]
     dirty = _dirty_files()
     lint = [
@@ -218,7 +230,10 @@ def _repo_text_candidates() -> list[str]:
     失败兜底：git 不可用时返回空 → secrets 报「无硬编码密钥」（不静默跳过整项检查之外的东西）。
     """
     out: list[str] = []
-    for args in (["git", "ls-files"], ["git", "ls-files", "--others", "--exclude-standard"]):
+    for args in (
+        ["git", "-c", "core.quotepath=false", "ls-files"],
+        ["git", "-c", "core.quotepath=false", "ls-files", "--others", "--exclude-standard"],
+    ):
         code, ls = run(args)
         if code != 0:
             continue

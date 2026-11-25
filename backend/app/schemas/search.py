@@ -17,6 +17,7 @@ class SearchQuery(BaseModel):
     time_to: datetime | None = None
     place: str | None = None
     tag: str | None = None
+    person_id: str | None = Field(None, max_length=64)  # 按人过滤（B5-03；空=不按人）
     limit: int = Field(10, ge=1, le=50)
     # 2026-10-30（P2 C-5）：分页。**offset 分页而非游标**——检索结果按向量/重排分数排序，
     # 分数不是稳定主键（同一查询两次召回可能差几名），游标（"上次最后一条"）在语义上

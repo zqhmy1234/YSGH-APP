@@ -1,0 +1,100 @@
+{
+  "cards": [
+    {
+      "role_id": "family-album-guide",
+      "version": "2.0",
+      "snapshot_at": "2026-11-24T12:00:00+08:00",
+      "card_hash": "cca045d025af8820",
+      "taboo": [
+        "别想太多",
+        "你为什么这样",
+        "怀念吗",
+        "你应该"
+      ],
+      "memory_policy": {
+        "may_read_private": true,
+        "may_read_face_result": false
+      }
+    },
+    {
+      "role_id": "gentle-friend",
+      "version": "2.0",
+      "snapshot_at": "2026-11-24T12:00:00+08:00",
+      "card_hash": "527ec7dac544c28b",
+      "taboo": [
+        "别想太多",
+        "你为什么这样",
+        "怀念吗",
+        "你应该"
+      ],
+      "memory_policy": {
+        "may_read_private": true,
+        "may_read_face_result": false
+      }
+    },
+    {
+      "role_id": "grandchild-proxy",
+      "version": "2.0",
+      "snapshot_at": "2026-11-24T12:00:00+08:00",
+      "card_hash": "8108d8670f230a28",
+      "taboo": [
+        "别想太多",
+        "你为什么这样",
+        "怀念吗",
+        "你应该"
+      ],
+      "memory_policy": {
+        "may_read_private": true,
+        "may_read_face_result": false
+      }
+    },
+    {
+      "role_id": "memory-companion",
+      "version": "2.0",
+      "snapshot_at": "2026-11-24T12:00:00+08:00",
+      "card_hash": "c175a0651d2e7764",
+      "taboo": [
+        "别想太多",
+        "你为什么这样",
+        "怀念吗",
+        "你应该"
+      ],
+      "memory_policy": {
+        "may_read_private": true,
+        "may_read_face_result": false
+      }
+    },
+    {
+      "role_id": "quiet-listener",
+      "version": "2.0",
+      "snapshot_at": "2026-11-24T12:00:00+08:00",
+      "card_hash": "0d6d6e54a14bab3d",
+      "taboo": [
+        "别想太多",
+        "你为什么这样",
+        "怀念吗",
+        "你应该"
+      ],
+      "memory_policy": {
+        "may_read_private": true,
+        "may_read_face_result": false
+      }
+    },
+    {
+      "role_id": "storyteller",
+      "version": "2.0",
+      "snapshot_at": "2026-11-24T12:00:00+08:00",
+      "card_hash": "976d42a12598c6a7",
+      "taboo": [
+        "别想太多",
+        "你为什么这样",
+        "怀念吗",
+        "你应该"
+      ],
+      "memory_policy": {
+        "may_read_private": true,
+        "may_read_face_result": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+# LiteLLM DB-only mode: the database is the single source of truth for models.
+#
+# Use this only AFTER `seed_models_from_config.py` has written the five model
+# rows. It removes the YAML model_list so /model/info has exactly one deployment
+# per model (db_model=true) instead of a config copy plus a DB copy.
+# Rollback: restore config.with-db.yaml (retains YAML models) and restart.
+
+litellm_settings:
+  drop_params: true
+  enable_redis_auth_cache: true
+  request_timeout: 60
+  num_retries: 1
+  fallbacks:
+    - deepseek-v4.1-flash: ["qwen3.8-flash"]
+    - deepseek-v4-flash: ["qwen3.8-flash"]
+    - deepseek-v4-pro: ["qwen4-max"]
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+  store_model_in_db: true
+  coordination_redis:
+    url: os.environ/REDIS_URL

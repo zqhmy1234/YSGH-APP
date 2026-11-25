@@ -19,9 +19,9 @@ class AsrTranscribeResponse(BaseModel):
         ..., description="实际使用通道"
     )
     emotion: str | None = Field(None, description="声学情绪标签（SenseVoice 通道产出）；None=未测得（D-16）")
-    emotion_confidence: float = Field(
-        0.0, ge=0.0, le=1.0, description="声学情绪置信度"
-    )
+    # B7-03 / 决策 29.10：**对外契约不携带情绪置信度**。内部管线仍用
+    # AsrResult.emotion_confidence 做阈值判断，但那是实现细节，不是给用户看的
+    # "情绪有多准"。客户端 AsrResult 已删除该字段（client/utils/voice.uts）。
     emotion_source: str = Field("none", description="声学情绪来源")
     emotion_model: str | None = Field(None, description="声学情绪模型")
     confidence: float = Field(0.0, ge=0.0, le=1.0, description="识别置信度")

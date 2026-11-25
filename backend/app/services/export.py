@@ -12,7 +12,11 @@
 """
 from __future__ import annotations
 
+import base64
 import hashlib
+import io
+import json
+import zipfile
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -23,6 +27,8 @@ from app.db.models import (
     CorrectionLog,
     Event,
     EventItem,
+    MemoryEntry,
+    Person,
     ProfileSensitive,
     UserProfile,
 )
@@ -34,31 +40,48 @@ EXPORT_MAX_PER_TYPE = 2000
 
 
 def _collect_capped(
-    db: Session, model, user_id: str, cap: int | None = None
-) -> tuple[list, bool]:
-    """按 id 键集分页取用户行（增量游标 id > last_id，PG 端比较，UUID/BigInt 通用）。
+    db: Session,
+    model,
+    user_id: str,
+    cap: int | None = None,
+    after=None,
+    *,
+    key_attr: str = "id",
+) -> tuple[list, bool, str | None]:
+    """按主键键集分页取用户行（增量游标 key > last_key，PG 端比较）。
+
+    ``key_attr`` 默认 ``id``（UUID/BigInt 通用）；canonical 账本的
+    ``memory_entries`` 主键叫 ``entry_id``，所以这里必须可配置——写死 ``id``
+    会让整份导出在真库上抛 AttributeError（2026-11-24 实锤）。
 
     cap 缺省取模块常量 EXPORT_MAX_PER_TYPE（调用期求值，便于测试 monkeypatch 收窄）。
-    返回 (rows[:cap], truncated)——取到 cap 后仍尝试再查一块以探测是否超限。
+    返回 (rows[:cap], truncated, next_key)——取到 cap 后仍尝试再查一块以探测是否超限。
     """
     if cap is None:
         cap = EXPORT_MAX_PER_TYPE
+    key = getattr(model, key_attr)
     rows: list = []
-    last_id = None
+    last_key = after
     while len(rows) <= cap:  # 多取一块用于探测截断
-        stmt = select(model).where(model.user_id == user_id).order_by(model.id)
-        if last_id is not None:
-            stmt = stmt.where(model.id > last_id)
+        stmt = select(model).where(model.user_id == user_id).order_by(key)
+        if last_key is not None:
+            stmt = stmt.where(key > last_key)
         batch = db.execute(stmt.limit(_CHUNK)).scalars().all()
         if not batch:
             break
         rows.extend(batch)
-        last_id = batch[-1].id
-    return rows[:cap], len(rows) > cap
+        last_key = getattr(batch[-1], key_attr)
+    truncated = len(rows) > cap
+    next_key = str(getattr(rows[cap - 1], key_attr)) if truncated and cap else None
+    return rows[:cap], truncated, next_key
 
 
-def _content_out(c: Content) -> dict:
-    return {
+def _last_id(rows: list, key_attr: str = "id") -> str | None:
+    return str(getattr(rows[-1], key_attr)) if rows else None
+
+
+def _content_out(c: Content, storage=None, user_id: str = "") -> dict:
+    out = {
         "content_id": str(c.id),
         "content_type": c.content_type,
         "taken_at": c.taken_at,
@@ -75,6 +98,12 @@ def _content_out(c: Content) -> dict:
         "created_at": c.created_at,
         "deleted_at": c.deleted_at,               # 软删 30 天内仍可回溯
     }
+    if storage is not None and c.content_type in ("photo", "image"):
+        out["download_url"] = storage.get_download_url(c.cos_key or "", user_id) if c.cos_key else None
+        out["thumbnail_url"] = (
+            storage.get_download_url(c.thumbnail_key, user_id) if c.thumbnail_key else None
+        )
+    return out
 
 
 def _event_out(e: Event, member_map: dict[str, list[str]]) -> dict:
@@ -147,16 +176,99 @@ def _hash_user_id(user_id: str) -> str:
     return hashlib.sha256(user_id.encode()).hexdigest()[:16]
 
 
-def build_export_payload(db: Session, user_id: str) -> dict:
-    """全量导出负载：contents + events(+成员) + profile(+敏感项) + corrections。
+def encode_cursor(values: dict[str, str]) -> str:
+    return base64.urlsafe_b64encode(json.dumps(values, sort_keys=True).encode()).decode()
+
+
+def decode_cursor(cursor: str | None) -> dict[str, str]:
+    if not cursor:
+        return {}
+    try:
+        raw = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
+    except Exception as exc:  # noqa: BLE001 —— 非法游标必须 422，不静默从头导出
+        raise ValueError("invalid cursor") from exc
+    if not isinstance(raw, dict) or not all(isinstance(v, str) for v in raw.values()):
+        raise ValueError("invalid cursor")
+    # 游标里的 after id 是客户端可控的：按**列类型**分别校验——
+    # contents/events/persons/corrections 主键是 UUID；memory_entries.entry_id
+    # 是 ledger 生成 m_<12hex> 字符串（ledger.py entry_id_for）。一律按 UUID 校验
+    # 会让含 memory 的第二页必然 422（审判 nail）。
+    import re as _re
+    import uuid as _uuid
+
+    cleaned: dict[str, str] = {}
+    for key, value in raw.items():
+        if not value:
+            continue  # 空值视为「无游标」，不传给 _collect_capped 触发 UUID > '' 的 DataError
+        if key == "memory":
+            if not _re.fullmatch(r"m_[0-9a-f]{12}", value):
+                raise ValueError("invalid cursor id for memory")
+        else:
+            try:
+                _uuid.UUID(value)
+            except (ValueError, AttributeError, TypeError) as exc:
+                raise ValueError(f"invalid cursor id for {key}") from exc
+        cleaned[key] = value
+    return cleaned
+
+
+def build_export_payload(
+    db: Session,
+    user_id: str,
+    cursor: str | None = None,
+    *,
+    include_media_links: bool = False,
+) -> dict:
+    """全量导出负载：contents + events(+成员) + profile(+敏感项) + corrections + memory。
 
     同步返回（拍板 D1 全量 JSON）；行按 id 键集分块取出并截断到每类上限；
-    datetime 保持原值，由 API 层统一 ISO8601 序列化。
+    `truncated=true` 时 **必须** 带 `next_cursor`，否则客户端无法续拉。
     """
-    contents, contents_trunc = _collect_capped(db, Content, user_id)
-    events, events_trunc = _collect_capped(db, Event, user_id)
-    corrections, corr_trunc = _collect_capped(db, CorrectionLog, user_id)
-    truncated = contents_trunc or events_trunc or corr_trunc
+    after = decode_cursor(cursor)
+    # B6 保险箱：锁住的内容不进导出（访问入口过滤；解锁后自动恢复）
+    from app.services.vault import locked_content_ids
+    vaulted = locked_content_ids(db, user_id)
+    storage = None
+    if include_media_links:
+        try:
+            from app.services.external.storage import get_storage_backend
+
+            storage = get_storage_backend()
+        except Exception:  # noqa: BLE001 —— 链接失败不阻断元数据导出
+            storage = None
+    contents, contents_trunc, contents_next = _collect_capped(
+        db, Content, user_id, after=after.get("contents")
+    )
+    events, events_trunc, events_next = _collect_capped(
+        db, Event, user_id, after=after.get("events")
+    )
+    corrections, corr_trunc, corr_next = _collect_capped(
+        db, CorrectionLog, user_id, after=after.get("corrections")
+    )
+    memories, memory_trunc, memory_next = _collect_capped(
+        db, MemoryEntry, user_id, after=after.get("memory"), key_attr="entry_id"
+    )
+    persons, person_trunc, person_next = _collect_capped(
+        db, Person, user_id, after=after.get("persons")
+    )
+    truncated = any(
+        (contents_trunc, events_trunc, corr_trunc, memory_trunc, person_trunc)
+    )
+    next_cursor = None
+    if truncated:
+        # 未截断的类别也带上"最后一页的 id"，保证续拉只前进、不重复。
+        next_ids = {
+            key: (value or _last_id(rows))
+            for key, value, rows in (
+                ("contents", contents_next, contents),
+                ("events", events_next, events),
+                ("corrections", corr_next, corrections),
+                ("memory", memory_next, memories),
+                ("persons", person_next, persons),
+            )
+            if value or rows
+        }
+        next_cursor = encode_cursor(next_ids)
 
     member_map: dict[str, list[str]] = {}
     if events:
@@ -167,15 +279,109 @@ def build_export_payload(db: Session, user_id: str) -> dict:
             )
         ).all()
         for ev_id, cid in rows:
+            if str(cid) in vaulted:
+                continue
             member_map.setdefault(str(ev_id), []).append(str(cid))
+    # B6 保险箱：锁住内容的存在性与关联关系不得从 events/corrections 泄露。
+    # 封面指向锁定内容的事件整条排除；纠错记录中引用锁定内容的也排除。
+    events = [e for e in events if str(getattr(e, "cover_content_id", "")) not in vaulted]
+    corrections = [r for r in corrections if str(getattr(r, "content_id", "")) not in vaulted]
 
     return {
         "schema_version": "1.0",
         "exported_at": datetime.now(UTC),
         "user_id_hashed": _hash_user_id(user_id),
-        "contents": [_content_out(c) for c in contents],
+        "contents": [_content_out(c, storage, user_id) for c in contents if str(c.id) not in vaulted],
         "events": [_event_out(e, member_map) for e in events],
         "profile": _profile_out(db, user_id),
         "corrections": [_correction_out(r) for r in corrections],
+        "memory": [
+            {
+                "entry_id": m.entry_id,
+                "kind": m.kind,
+                "text": m.text,
+                "summary": m.summary,
+                "valid_from": m.valid_from,
+                "valid_to": m.valid_to,
+                # B6 保险箱：剔除指向锁定内容的 evidence（连「存在一条锁定内容」都不泄露）
+                "evidence": [
+                    e for e in (m.evidence or [])
+                    if not (isinstance(e, dict) and str(e.get("id") or "") in vaulted)
+                ],
+                "confidence": float(m.confidence),
+                "sensitivity": m.sensitivity,
+            }
+            for m in memories
+        ],
+        "persons": [
+            {
+                "person_id": str(p.id),
+                "display_name": p.display_name,
+                "relation": p.relation,
+                "epistemic": p.epistemic,
+                "created_at": p.created_at,
+                "deleted_at": p.deleted_at,
+            }
+            for p in persons
+        ],
         "truncated": truncated,
+        "next_cursor": next_cursor,
     }
+
+
+EXPORT_ZIP_MAX_BYTES = 50 * 1024 * 1024
+
+
+def build_export_zip(
+    payload: dict,
+    *,
+    storage=None,
+    max_bytes: int = EXPORT_ZIP_MAX_BYTES,
+) -> tuple[bytes, bool]:
+    """B5-04: text/voice/metadata into a ZIP; photos stay as signed COS links.
+
+    Photos are intentionally *not* embedded (the export contract gives links so the
+    client can fetch originals directly). Voice bytes and transcripts are included
+    because the user asked for a portable archive of their own content. If the ZIP
+    would exceed ``max_bytes``, the entry is skipped and ``truncated=True`` is
+    returned rather than silently producing a half-written archive.
+    """
+    if storage is None:
+        from app.services.external.storage import get_storage_backend
+
+        storage = get_storage_backend()
+    buf = io.BytesIO()
+    truncated = bool(payload.get("truncated"))
+    warnings: list[str] = []
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            "metadata.json",
+            json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+        )
+        for item in payload.get("contents") or []:
+            cid = str(item.get("content_id") or "")
+            ctype = item.get("content_type") or ""
+            text = (item.get("caption") or "").strip()
+            if ctype == "text" and text:
+                zf.writestr(f"texts/{cid}.txt", text)
+            if ctype == "voice":
+                if text:
+                    zf.writestr(f"transcripts/{cid}.txt", text)
+                key = item.get("url") or ""
+                if not key:
+                    warnings.append(f"voice_missing_key:{cid}")
+                    continue
+                try:
+                    data = storage.get_object(key)
+                except Exception as exc:  # noqa: BLE001 —— 单个对象失败不拖垮整个 ZIP
+                    warnings.append(f"voice_fetch_failed:{cid}:{type(exc).__name__}")
+                    continue
+                suffix = "." + key.rsplit(".", 1)[-1] if "." in key.rsplit("/", 1)[-1] else ".wav"
+                if buf.tell() + len(data) > max_bytes:
+                    truncated = True
+                    warnings.append(f"zip_size_limit:{cid}")
+                    break
+                zf.writestr(f"audio/{cid}{suffix}", data)
+        if warnings:
+            payload["zip_warnings"] = warnings
+    return buf.getvalue(), truncated

@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1560" height="940" viewBox="0 0 1560 940">
+<defs><marker id="ah-ink" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#16324F"/></marker><marker id="ah-teal" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2F6F7E"/></marker><marker id="ah-warm" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#C7763F"/></marker><marker id="ah-gray" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#A9B7C5"/></marker><marker id="ah-red" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#A8452F"/></marker></defs>
+<rect width="1560" height="940" fill="#FFFFFF"/>
+<text x="40" y="46" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="26" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">B4 回响｜把「推不推」做成可测函数，不是 prompt 文案</text>
+<text x="40" y="72" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="13" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">eligible() 六道 AND 闸；任一为假 → 不推，不解释、不补偿、不追问</text>
+<rect x="1447.36" y="26" width="72.64" height="30" rx="15" fill="#EAF2F4" stroke="#2F6F7E" stroke-width="1" opacity="1"/>
+<text x="1483.68" y="46" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#2F6F7E" text-anchor="middle" letter-spacing="0">图 14</text>
+<rect x="40" y="116" width="860" height="62" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="40" y="116" width="5" height="62" rx="2" fill="#2F6F7E" stroke="#2F6F7E" stroke-width="0" opacity="1"/>
+<text x="60" y="142" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">within_window</text>
+<text x="60" y="162" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.3" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">今天是否落在 anniversary_rules 窗口（去年今日 / 生日 / 节日）</text>
+<line x1="470" y1="178" x2="470" y2="194" stroke="#2F6F7E" stroke-width="1.6" marker-end="url(#ah-teal)"/>
+<rect x="40" y="194" width="860" height="62" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="40" y="194" width="5" height="62" rx="2" fill="#2F6F7E" stroke="#2F6F7E" stroke-width="0" opacity="1"/>
+<text x="60" y="220" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">has_asset</text>
+<text x="60" y="240" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.3" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">该日期 ±N 天内是否有资产（空窗期推 = 硬造情绪）</text>
+<line x1="470" y1="256" x2="470" y2="272" stroke="#DDE4EB" stroke-width="1.6" marker-end="url(#ah-ink)"/>
+<rect x="40" y="272" width="860" height="62" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="40" y="272" width="5" height="62" rx="2" fill="#C7763F" stroke="#C7763F" stroke-width="0" opacity="1"/>
+<text x="60" y="298" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">NOT excluded</text>
+<text x="60" y="318" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.3" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">人 / 宠物 / 日期段 / 词 —— SQL 下推，词复用 profile_sensitive</text>
+<line x1="470" y1="334" x2="470" y2="350" stroke="#DDE4EB" stroke-width="1.6" marker-end="url(#ah-ink)"/>
+<rect x="40" y="350" width="860" height="62" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="40" y="350" width="5" height="62" rx="2" fill="#C7763F" stroke="#C7763F" stroke-width="0" opacity="1"/>
+<text x="60" y="376" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">NOT quiet_hours</text>
+<text x="60" y="396" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.3" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">静默时段（跨时区纯函数，用户在夜里不被叫醒）</text>
+<line x1="470" y1="412" x2="470" y2="428" stroke="#DDE4EB" stroke-width="1.6" marker-end="url(#ah-ink)"/>
+<rect x="40" y="428" width="860" height="62" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="40" y="428" width="5" height="62" rx="2" fill="#C7763F" stroke="#C7763F" stroke-width="0" opacity="1"/>
+<text x="60" y="454" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">NOT over_frequency</text>
+<text x="60" y="474" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.3" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">7 天内不重复推（频率上限，宁少不多）</text>
+<line x1="470" y1="490" x2="470" y2="506" stroke="#DDE4EB" stroke-width="1.6" marker-end="url(#ah-ink)"/>
+<rect x="40" y="506" width="860" height="62" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="40" y="506" width="5" height="62" rx="2" fill="#A8452F" stroke="#A8452F" stroke-width="0" opacity="1"/>
+<text x="60" y="532" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">NOT dismissed</text>
+<text x="60" y="552" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.3" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">这条内容用户已「不再显示」→ 永久不再进候选</text>
+<rect x="40" y="604" width="860" height="96" rx="10" fill="#F8EEE7" stroke="#C7763F" stroke-width="1" opacity="1"/>
+<text x="60" y="632" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">eligible() = 六个条件全部为真 → 才进候选池</text>
+<text x="60" y="656" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.5" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">任何一条为假：不推、不写 push_log、不弹「今天没有回忆」——静默是默认，不是失败。</text>
+<text x="60" y="682" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.5" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">候选池 ≠ 推送：进池只是「可以被今天用」，真正展示还要过一次频控与排序。</text>
+<rect x="940" y="116" width="580" height="340" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<text x="956" y="142" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12.5" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">六个组件（每个都能单测）</text>
+<text x="956" y="174" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.8" font-weight="600" fill="#2F6F7E" text-anchor="start" letter-spacing="0">资格计算</text>
+<text x="1050" y="174" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.2" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">EchoPort.eligible() / today() 纯函数，无 LLM</text>
+<text x="956" y="220" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.8" font-weight="600" fill="#2F6F7E" text-anchor="start" letter-spacing="0">雷区过滤</text>
+<text x="1050" y="220" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.2" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">echo_exclusion + profile_sensitive（人/宠物/日期段/词）</text>
+<text x="956" y="266" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.8" font-weight="600" fill="#2F6F7E" text-anchor="start" letter-spacing="0">静默时段</text>
+<text x="1050" y="266" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.2" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">in_quiet_hours() 纯函数，跨时区；用户可关</text>
+<text x="956" y="312" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.8" font-weight="600" fill="#2F6F7E" text-anchor="start" letter-spacing="0">通道</text>
+<text x="1050" y="312" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.2" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">channel 恒 in_app（需求 19：默认克制）</text>
+<text x="956" y="358" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.8" font-weight="600" fill="#2F6F7E" text-anchor="start" letter-spacing="0">文案</text>
+<text x="1050" y="358" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.2" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">禁「怀念吗 / 还记得吗」式诱导；分享是可选入口，不是 CTA</text>
+<text x="956" y="404" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.8" font-weight="600" fill="#2F6F7E" text-anchor="start" letter-spacing="0">成长 / 分享</text>
+<text x="1050" y="404" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.2" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">growth_milestone（月龄/第一次/同场景跨年）＋ share_link 与回忆册</text>
+<rect x="940" y="480" width="580" height="220" rx="10" fill="#FDF6F4" stroke="#A8452F" stroke-width="1" opacity="1"/>
+<text x="956" y="506" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12.5" font-weight="600" fill="#A8452F" text-anchor="start" letter-spacing="0">不做假状态：推送只有一条真通道</text>
+<text x="956" y="540" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.4" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">内测期真实通道是 mock，但架构上仍有 push_log 与 channel 字段；</text>
+<text x="956" y="560" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.4" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">对外只承诺 in_app —— 不做「已推送」的假状态（G9 断言）。</text>
+<text x="956" y="580" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.4" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0"></text>
+<text x="956" y="600" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.4" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">禁区：不写「已联络紧急联系人」；不写「已送达」；</text>
+<text x="956" y="620" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.4" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">不因未推送而改 eligible() 的返回值。</text>
+<rect x="940" y="720" width="580" height="96" rx="10" fill="#F3F6FA" stroke="#DDE4EB" stroke-width="1" opacity="1"/>
+<text x="956" y="748" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.2" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">需求 19-25 的落点</text>
+<text x="956" y="772" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.2" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">19 克制 / 20 屏蔽 / 21 首次雷区 / 22 不问怀念 / 23 成长 / 24 分享 / 25 低谷少推</text>
+<text x="956" y="796" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.2" font-weight="normal" fill="#C7763F" text-anchor="start" letter-spacing="0">七条全部落在 eligible() 的六个条件里，没有一条靠「提示词祈祷」。</text>
+<text x="40" y="912" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11" font-weight="600" fill="#3C5A78" text-anchor="start" letter-spacing="0">一句话：回响的对手不是「推得不够多」，是「推得不对」——所以闸门先于文案，函数先于提示词。</text>
+</svg>

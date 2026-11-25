@@ -336,6 +336,16 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
     # 4. 溯源组装（RET-016：每条结果可解释命中字段）
     #    2026-10-30（P2 C-5）：按窗口取（offset>0 时要连前面几页的候选一起组装才能切片）
     hits = _assemble_hits(raw_hits, window, db, user_id)
+    # B6 保险箱（四路审判 P0）：锁住的内容不得出现在任何检索结果——用户端与
+    # Agent 端共用 rag_search，这一处即覆盖两条入口；放在 total 计算之前，
+    # 保证分页总数也不泄露被锁内容的存在。
+    if db is not None and user_id:
+        from app.services.vault import locked_content_ids
+        vaulted = locked_content_ids(db, user_id)
+        if vaulted:
+            hits = [h for h in hits if str(getattr(h, "content_id", "")) not in vaulted]
+    if filters.get("person_id"):
+        hits = _filter_hits_by_person(hits, db, user_id, str(filters["person_id"]))
 
     # 4.1 R-1 拒答地板（2026-10-09）：召回层稠密相似度低于地板的命中整条剔除；
     #     全部低于地板 → 空结果，即「答不出来就不答」。门禁 negative_error_rate ≤0.05。
@@ -464,3 +474,28 @@ def _search_impl(q: SearchQuery, db=None, user_id: str | None = None, collection
         latency_ms=latency_ms,
         degraded=degraded,
     )
+
+
+def _filter_hits_by_person(hits: list[SearchHit], db, user_id: str | None, person_id: str) -> list[SearchHit]:
+    """B5-03 post-filter shared by keyword/vector/time channels.
+
+    Qdrant payload has no ``person_ids`` yet; the relation lives in PG
+    ``content_persons``. Doing the filter after assembly means every channel is
+    covered by one predicate. If the store is unavailable (``db is None``), the
+    only honest answer is an empty list — never an unfiltered one.
+    """
+    if db is None or not user_id:
+        return []
+    from sqlalchemy import select
+
+    from app.db.models import ContentPerson
+
+    allowed = set(
+        db.execute(
+            select(ContentPerson.content_id).where(
+                ContentPerson.person_id == str(person_id),
+                ContentPerson.valid_to.is_(None),
+            )
+        ).scalars()
+    )
+    return [hit for hit in hits if str(hit.content_id) in allowed]

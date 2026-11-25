@@ -28,6 +28,14 @@ class EchoHistory(Base):
             unique=True,
             postgresql_where=sa_text("action IS DISTINCT FROM 'dismiss'"),
         ),
+        # B4 dismiss 幂等：并发重复划掉不叠加记录（与 migration b4e5c6d7f8a9 对齐）
+        Index(
+            "uq_echo_history_dismiss",
+            "user_id",
+            "fingerprint",
+            unique=True,
+            postgresql_where=sa_text("action = 'dismiss'"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)

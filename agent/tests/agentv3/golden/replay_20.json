@@ -1,0 +1,142 @@
+[
+ {
+  "text": "今天有点累",
+  "intent": "companion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "上次去杭州是哪天",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "帮我记一下今天她来了",
+  "intent": "ingest",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "以后别推送了",
+  "intent": "trust",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "帮我写个 python 脚本",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "你好呀",
+  "intent": "companion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记得去年冬天吗",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那家店的咖啡",
+  "intent": "companion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我想哭",
+  "intent": "companion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "存一下这句话",
+  "intent": "ingest",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "屏蔽这个词",
+  "intent": "trust",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "翻译一下这段",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "她后来怎么样了",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "找一下去年四月的照片",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "今天天气不错",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "我睡不着",
+  "intent": "companion",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "记着下周三提醒我",
+  "intent": "ingest",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "把提醒时间改到晚上",
+  "intent": "trust",
+  "status": "grounded",
+  "write_policy": "propose",
+  "degraded": false
+ },
+ {
+  "text": "汇率是多少",
+  "intent": "out_of_scope",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ },
+ {
+  "text": "那年夏天在海边",
+  "intent": "recall",
+  "status": "grounded",
+  "write_policy": "none",
+  "degraded": false
+ }
+]

@@ -1,0 +1,18 @@
+{
+  "version": "2026-11-23.1",
+  "bundle_budget": 4200,
+  "system_hard_limit": 7900,
+  "description": "10 段固定顺序提示词 Bundle。protected 段永不裁剪；role card 只能进入 character_card。",
+  "segments": [
+    {"name": "platform_guard", "order": 0, "protected": true, "source": "inline:prompts.bundle._PLATFORM_GUARD", "max_chars": 760, "purpose": "平台护栏：语言、边界、反编造、危机外拒"},
+    {"name": "crisis_protocol", "order": 1, "protected": true, "source": "guard.md", "max_chars": 420, "purpose": "T3 危机固定流程，禁止声称已联络"},
+    {"name": "character_card", "order": 2, "protected": false, "source": "runtime:CharacterCard", "max_chars": 1200, "purpose": "角色卡只提供风味，不覆盖平台护栏"},
+    {"name": "relationship", "order": 3, "protected": false, "source": "relationship.md", "max_chars": 220, "purpose": "关系阶段与称呼"},
+    {"name": "boundaries", "order": 4, "protected": false, "source": "boundaries.md", "max_chars": 260, "purpose": "用户边界与拒绝项，裁剪优先级最后"},
+    {"name": "memory_policy", "order": 5, "protected": false, "source": "memory_policy.md", "max_chars": 320, "purpose": "记忆三层、修正优先、软删除"},
+    {"name": "tool_policy", "order": 6, "protected": false, "source": "tool_policy.md", "max_chars": 360, "purpose": "读工具可用、写工具不暴露"},
+    {"name": "style", "order": 7, "protected": false, "source": "style.md", "max_chars": 220, "purpose": "句长、语气、中文回复"},
+    {"name": "evidence", "order": 8, "protected": false, "source": "evidence.md + Frame", "max_chars": 1500, "purpose": "本轮检索证据与引用规则"},
+    {"name": "post_history", "order": 9, "protected": false, "source": "post_history.md", "max_chars": 180, "purpose": "卡片 post_history 指令的只读展示位"}
+  ]
+}

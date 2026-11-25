@@ -65,6 +65,7 @@ def record_correction(
     source: str = "active",
     content_type: str = "text",
     confidence: float | None = None,
+    field: str = "text",
 ) -> CorrectionLog:
     """记录纠错（第①层数据源）：BGE-M3 向量 → Qdrant + correction_log 落库
 
@@ -77,6 +78,8 @@ def record_correction(
     调用方对 `contents.content_class` 的回写照旧，故用户可见的分类纠正不受影响。
     ⚠️ 不得用假文本占位——那会把噪声写进个人规则向量库（O-2「纠错恒混合」教训）。
     """
+    if field not in {"text", "value", "emotion", "tone"}:
+        raise ValueError(f"unsupported correction field: {field}")
     pid: str | None = None
     if text.strip():
         store = _get_store()
@@ -117,6 +120,7 @@ def record_correction(
         old_label=old_label,
         new_label=new_label,
         source=source,
+        field=field,
         confidence=confidence,
     )
     db.add(row)

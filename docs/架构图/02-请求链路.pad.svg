@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1580" height="1580" viewBox="0 0 1580 1580">
+<defs><marker id="ah-ink" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#16324F"/></marker><marker id="ah-teal" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2F6F7E"/></marker><marker id="ah-warm" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#C7763F"/></marker><marker id="ah-gray" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#A9B7C5"/></marker><marker id="ah-red" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#A8452F"/></marker></defs>
+<rect width="1580" height="1580" fill="#FFFFFF"/>
+<g transform="translate(140.0,0.0)">
+<text x="40" y="46" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="26" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">一次请求的完整链路（混合场景：陪聊中引用你自己的回忆）</text>
+<text x="40" y="72" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="13" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">左列为主链路，右列为耗时量级；虚线部分全部异步，不占用户等待时间</text>
+<rect x="1198.52" y="26" width="61.48" height="30" rx="15" fill="#EAF2F4" stroke="#2F6F7E" stroke-width="1" opacity="1"/>
+<text x="1229.26" y="46" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#2F6F7E" text-anchor="middle" letter-spacing="0">链路图</text>
+<rect x="70" y="110" width="720" height="66" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="70" y="110" width="4" height="66" rx="2" fill="#3C5A78" stroke="#3C5A78" stroke-width="0" opacity="1"/>
+<text x="84" y="134" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="13.5" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">① 用户输入</text>
+<text x="84" y="156" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">文字 / 语音（ASR）/ 照片（以图搜）/ 时间轴点选</text>
+<line x1="430.0" y1="176" x2="430.0" y2="206" stroke="#16324F" stroke-width="1.6" marker-end="url(#ah-ink)"/>
+<rect x="70" y="206" width="720" height="74" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="70" y="206" width="4" height="74" rx="2" fill="#A8452F" stroke="#A8452F" stroke-width="0" opacity="1"/>
+<text x="84" y="230" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="13.5" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">② 输入护栏（前置）</text>
+<text x="84" y="252" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">越狱/注入 → 拦截并按人设回应；危机词 → 转 crisis 链路（不进 Agent）</text>
+<text x="830" y="246" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#647788" text-anchor="start" letter-spacing="0">&lt; 10 ms</text>
+<line x1="430.0" y1="280" x2="430.0" y2="310" stroke="#16324F" stroke-width="1.6" marker-end="url(#ah-ink)"/>
+<rect x="70" y="310" width="720" height="96" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="70" y="310" width="4" height="96" rx="2" fill="#2F6F7E" stroke="#2F6F7E" stroke-width="0" opacity="1"/>
+<text x="84" y="334" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="13.5" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">③ 意图路由（6 类）</text>
+<text x="84" y="356" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">RP 陪伴 / 检索回忆 / 摄入整理 / 回响推送 / 设置信任 / 混合引用私料</text>
+<text x="84" y="374" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">只决定“选谁干”，不做业务判断</text>
+<text x="830" y="356" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#647788" text-anchor="start" letter-spacing="0">50–100 ms</text>
+<line x1="430.0" y1="406" x2="430.0" y2="436" stroke="#16324F" stroke-width="1.6" marker-end="url(#ah-ink)"/>
+<rect x="70" y="436" width="720" height="214" rx="10" fill="#F3F6FA" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<text x="86" y="460" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">④ 取料：五路并行（彼此独立，缺一路不阻塞）</text>
+<rect x="84.0" y="470" width="131.6" height="106" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="84.0" y="470" width="4" height="106" rx="2" fill="#2F6F7E" stroke="#2F6F7E" stroke-width="0" opacity="1"/>
+<text x="98.0" y="494" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">Search</text>
+<text x="98.0" y="516" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.5" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">事件级检索</text>
+<text x="98.0" y="532.5" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.5" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">top-k+rerank</text>
+<rect x="98.0" y="551" width="29.119999999999997" height="18" rx="9" fill="#F3F6FA" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<text x="112.56" y="563.5" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="9.5" font-weight="600" fill="#647788" text-anchor="middle" letter-spacing="0">必须</text>
+<rect x="223.6" y="470" width="131.6" height="106" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="223.6" y="470" width="4" height="106" rx="2" fill="#3C5A78" stroke="#3C5A78" stroke-width="0" opacity="1"/>
+<text x="237.6" y="494" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">Timeline</text>
+<text x="237.6" y="516" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.5" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">时间轴上下文</text>
+<text x="237.6" y="532.5" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.5" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">接续讲述用</text>
+<rect x="237.6" y="551" width="29.119999999999997" height="18" rx="9" fill="#F3F6FA" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<text x="252.16" y="563.5" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="9.5" font-weight="600" fill="#647788" text-anchor="middle" letter-spacing="0">按需</text>
+<rect x="363.2" y="470" width="131.6" height="106" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="363.2" y="470" width="4" height="106" rx="2" fill="#3C5A78" stroke="#3C5A78" stroke-width="0" opacity="1"/>
+<text x="377.2" y="494" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">Person</text>
+<text x="377.2" y="516" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.5" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">按人过滤</text>
+<text x="377.2" y="532.5" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.5" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">content_persons</text>
+<rect x="377.2" y="551" width="29.119999999999997" height="18" rx="9" fill="#F3F6FA" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<text x="391.76" y="563.5" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="9.5" font-weight="600" fill="#647788" text-anchor="middle" letter-spacing="0">按需</text>
+<rect x="502.79999999999995" y="470" width="131.6" height="106" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="502.79999999999995" y="470" width="4" height="106" rx="2" fill="#C7763F" stroke="#C7763F" stroke-width="0" opacity="1"/>
+<text x="516.8" y="494" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">Digest</text>
+<text x="516.8" y="516" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.5" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">投影≤600字</text>
+<text x="516.8" y="532.5" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.5" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">三态</text>
+<rect x="516.8" y="551" width="29.119999999999997" height="18" rx="9" fill="#F3F6FA" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<text x="531.3599999999999" y="563.5" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="9.5" font-weight="600" fill="#647788" text-anchor="middle" letter-spacing="0">必须</text>
+<rect x="642.4" y="470" width="131.6" height="106" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="642.4" y="470" width="4" height="106" rx="2" fill="#3C5A78" stroke="#3C5A78" stroke-width="0" opacity="1"/>
+<text x="656.4" y="494" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">Memory</text>
+<text x="656.4" y="516" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.5" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">叙事记忆片段</text>
+<text x="656.4" y="532.5" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.5" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">top-k+时间近</text>
+<rect x="656.4" y="551" width="29.119999999999997" height="18" rx="9" fill="#F3F6FA" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<text x="670.9599999999999" y="563.5" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="9.5" font-weight="600" fill="#647788" text-anchor="middle" letter-spacing="0">按需</text>
+<text x="86" y="592" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">必须 = 本轮涉及回忆或涉人时的下限；按需 = 只在接续讲述 / 续聊时才取</text>
+<text x="86" y="614" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">五路全部只读，任何一路超时都只降级、不阻断本轮生成</text>
+<text x="830" y="526" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#647788" text-anchor="start" letter-spacing="0">100–300 ms</text>
+<text x="830" y="544" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.5" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">（并行）</text>
+<line x1="430.0" y1="650" x2="430.0" y2="680" stroke="#16324F" stroke-width="1.6" marker-end="url(#ah-ink)"/>
+<rect x="70" y="680" width="720" height="104" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="70" y="680" width="4" height="104" rx="2" fill="#16324F" stroke="#16324F" stroke-width="0" opacity="1"/>
+<text x="84" y="704" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="13.5" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">⑤ 上下文帧组装（九段 · 带预算）</text>
+<text x="84" y="726" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">人设 / 状态 / 画像投影 / 叙事记忆 / 参考资料（只读+溯源）</text>
+<text x="84" y="744" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">最近对话 / 本轮输入 / 输出要求（含 state 块规范）</text>
+<text x="84" y="762" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">超预算：先砍第 8 段情绪；第 1 段称呼与第 6 段回避话题永不砍</text>
+<text x="830" y="728" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#647788" text-anchor="start" letter-spacing="0">&lt; 20 ms</text>
+<line x1="430.0" y1="784" x2="430.0" y2="814" stroke="#16324F" stroke-width="1.6" marker-end="url(#ah-ink)"/>
+<rect x="70" y="814" width="720" height="88" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="70" y="814" width="4" height="88" rx="2" fill="#C7763F" stroke="#C7763F" stroke-width="0" opacity="1"/>
+<text x="84" y="838" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="13.5" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">⑥ 主生成（流式）</text>
+<text x="84" y="860" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">Muse 出回复 + state 块提案；人设硬约束优先于参考资料</text>
+<text x="84" y="878" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">参考块为空 → “我这边没翻到”，禁止虚构</text>
+<rect x="735.76" y="822" width="44.239999999999995" height="19" rx="9" fill="#F3F6FA" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<text x="757.88" y="835.5" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10" font-weight="600" fill="#647788" text-anchor="middle" letter-spacing="0">最大耗时</text>
+<text x="830" y="854" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#647788" text-anchor="start" letter-spacing="0">1–4 s</text>
+<text x="830" y="872" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="10.5" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">取决于模型档</text>
+<line x1="430.0" y1="902" x2="430.0" y2="932" stroke="#C7763F" stroke-width="1.6" marker-end="url(#ah-warm)"/>
+<rect x="70" y="932" width="720" height="176" rx="10" fill="#F8EEE7" stroke="#C7763F" stroke-width="1" opacity="1"/>
+<text x="86" y="956" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">⑦ 输出闸（三检 · 命中一次重试 → 再降级）</text>
+<rect x="86.0" y="968" width="221.33333333333334" height="92" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="86.0" y="968" width="4" height="92" rx="2" fill="#A8452F" stroke="#A8452F" stroke-width="0" opacity="1"/>
+<text x="100.0" y="992" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">溯源校验</text>
+<text x="100.0" y="1014" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">引用私料必须有证据</text>
+<text x="100.0" y="1032" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">无证据：fail-closed</text>
+<rect x="319.33333333333337" y="968" width="221.33333333333334" height="92" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="319.33333333333337" y="968" width="4" height="92" rx="2" fill="#C7763F" stroke="#C7763F" stroke-width="0" opacity="1"/>
+<text x="333.33333333333337" y="992" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">共情校验</text>
+<text x="333.33333333333337" y="1014" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">禁语清单（“别想太多”）</text>
+<text x="333.33333333333337" y="1032" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">fail-open，不阻断回复</text>
+<rect x="552.6666666666667" y="968" width="221.33333333333334" height="92" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="552.6666666666667" y="968" width="4" height="92" rx="2" fill="#3C5A78" stroke="#3C5A78" stroke-width="0" opacity="1"/>
+<text x="566.6666666666667" y="992" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">OOC 校验</text>
+<text x="566.6666666666667" y="1014" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">是否变成客服 / 脱离人设</text>
+<text x="566.6666666666667" y="1032" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">命中 → 重试一次</text>
+<text x="86" y="1084" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">重试仍不通过 → 短回应 + 不追问（宁可少说，不许假装）</text>
+<text x="830" y="1022" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#647788" text-anchor="start" letter-spacing="0">≈ 50 ms</text>
+<line x1="430.0" y1="1108" x2="430.0" y2="1138" stroke="#16324F" stroke-width="1.6" marker-end="url(#ah-ink)"/>
+<rect x="70" y="1138" width="720" height="96" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="70" y="1138" width="4" height="96" rx="2" fill="#2F6F7E" stroke="#2F6F7E" stroke-width="0" opacity="1"/>
+<text x="84" y="1162" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="13.5" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">⑧ 状态提案解析 + 三态落库</text>
+<text x="84" y="1184" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">state 块解析失败 → 只降级不重试整轮（重试会让人听出机器味）</text>
+<text x="84" y="1202" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">写回三态：confirmed（200）/ draft（超时/无 token）/ rejected（护栏拒收）</text>
+<line x1="430.0" y1="1234" x2="430.0" y2="1264" stroke="#16324F" stroke-width="1.6" marker-end="url(#ah-ink)"/>
+<rect x="70" y="1264" width="720" height="60" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="70" y="1264" width="4" height="60" rx="2" fill="#3C5A78" stroke="#3C5A78" stroke-width="0" opacity="1"/>
+<text x="84" y="1288" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="13.5" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">⑨ 返回用户</text>
+<text x="84" y="1310" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">流式逐字返回；卡片渲染事件卡而非文件列表</text>
+<rect x="70" y="1354" width="720" height="200" rx="10" fill="#F3F6FA" stroke="#A9B7C5" stroke-width="1" stroke-dasharray="6 4" opacity="1"/>
+<text x="86" y="1380" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#647788" text-anchor="start" letter-spacing="0">⑩ 异步（运行在 P2/P3 队列，绝不阻塞上一轮）</text>
+<rect x="86.0" y="1394" width="338.0" height="66" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="86.0" y="1394" width="4" height="66" rx="2" fill="#647788" stroke="#647788" stroke-width="0" opacity="1"/>
+<text x="100.0" y="1418" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">Sculptor 记忆整理</text>
+<text x="100.0" y="1440" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">夜间闲时批处理，只加摘要层，不改原文</text>
+<rect x="436.0" y="1394" width="338.0" height="66" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="436.0" y="1394" width="4" height="66" rx="2" fill="#647788" stroke="#647788" stroke-width="0" opacity="1"/>
+<text x="450.0" y="1418" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">Serendipity 预取</text>
+<text x="450.0" y="1440" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">话题漂移时预取，失败静默放弃</text>
+<rect x="86.0" y="1470" width="338.0" height="66" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="86.0" y="1470" width="4" height="66" rx="2" fill="#647788" stroke="#647788" stroke-width="0" opacity="1"/>
+<text x="100.0" y="1494" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">向量化 / 事件聚合</text>
+<text x="100.0" y="1516" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">L2 文本、L3 图像向量、event_key 归并</text>
+<rect x="436.0" y="1470" width="338.0" height="66" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<rect x="436.0" y="1470" width="4" height="66" rx="2" fill="#647788" stroke="#647788" stroke-width="0" opacity="1"/>
+<text x="450.0" y="1494" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">Sculptor 生成画像投影</text>
+<text x="450.0" y="1516" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">8 段重算，写回后下一轮生效</text>
+<text x="830" y="1454" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#647788" text-anchor="start" letter-spacing="0">不占等待时间</text>
+<rect x="820" y="110" width="400" height="120" rx="10" fill="#FFFFFF" stroke="#A9B7C5" stroke-width="1" opacity="1"/>
+<text x="836" y="136" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="12.5" font-weight="600" fill="#16324F" text-anchor="start" letter-spacing="0">用户感知耗时</text>
+<text x="836" y="160" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">护栏 10 + 路由 80 + 召回 300</text>
+<text x="836" y="180" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="normal" fill="#647788" text-anchor="start" letter-spacing="0">+ 生成 1500 ≈ 1.9 s（首字更早）</text>
+<text x="836" y="204" font-family="'PingFang SC','Hiragino Sans GB','Heiti SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="11" font-weight="600" fill="#2F6F7E" text-anchor="start" letter-spacing="0">流式首字：召回完成即可开吐</text>
+</g>
+</svg>

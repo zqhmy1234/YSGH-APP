@@ -1,0 +1,22 @@
+忆述光华 (YiShu GuangHua)
+Copyright 2026 The YiShu GuangHua Authors
+
+This product includes software and text derived from Linger
+(https://github.com/simplexai-labs/linger), commit 6663e21a4f07004def7591b1e07e4725c5c73e60,
+Copyright SIMPLEX AI TECHNOLOGIES PTE. LTD., licensed under the Apache License, Version 2.0.
+
+Derived files (ported or adapted) in this repository:
+
+  agent/src/agentv3/memory/ledger.py            <- apps/node-services/src/memory/apply.ts
+  agent/src/agentv3/agents/librarian.py         <- apps/node-services/src/memory/README.md
+  agent/src/agentv3/agents/sculptor.py          <- apps/node-services/src/memory-agent.ts
+                                                   apps/node-services/src/llm-wiki/wiki-candidate-validation.ts
+  agent/src/agentv3/memory/projection.py        <- apps/node-services/docs/wiki-and-memory.md
+  agent/src/agentv3/prompts/sculptor.md         <- apps/node-services/prompts/memory-agent/principles.md
+
+Modifications to those files are copyright the YiShu GuangHua authors and are
+likewise licensed under the Apache License, Version 2.0. The full license text is
+available at http://www.apache.org/licenses/LICENSE-2.0
+
+Registration and reuse policy: docs/agent-v3/LINGER复用登记.md
+Upstream pin and per-file status: agent/docs/upstream/linger.json

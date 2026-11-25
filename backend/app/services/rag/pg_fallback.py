@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import String, cast, or_, select
 
-from app.db.models import Content, Event, EventItem
+from app.db.models import Content, ContentPerson, Event, EventItem
 from app.schemas.search import SearchQuery
 from app.services.query_helpers import alive_clause
 from app.services.search_filters import (
@@ -243,6 +243,16 @@ def _pg_fallback_search(
     if filters.get("tag"):
         # ci_tags 为 JSONB list[str]：cast to text 后 ILIKE（近似包含匹配）
         stmt = stmt.where(Content.extra["ci_tags"].astext.ilike(f"%{filters['tag']}%"))
+    if filters.get("person_id"):
+        # B5-03: active content links only; valid_to closes on person soft-delete.
+        stmt = stmt.where(
+            Content.id.in_(
+                select(ContentPerson.content_id).where(
+                    ContentPerson.person_id == str(filters["person_id"]),
+                    ContentPerson.valid_to.is_(None),
+                )
+            )
+        )
     stmt = stmt.where(or_(*[Content.text.ilike(f"%{t}%") for t in tokens]))
     try:
         rows = db.execute(stmt).scalars().all()

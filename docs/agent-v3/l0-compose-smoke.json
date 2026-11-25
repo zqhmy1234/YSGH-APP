@@ -1,0 +1,36 @@
+{
+  "status": "pass",
+  "note": "",
+  "checks": [
+    {
+      "name": "agent /health",
+      "ok": true,
+      "detail": "{\"status\":\"ok\",\"version\":\"4.0\",\"deps\":{\"agent\":\"ok\",\"llm\":\"ok\"}}"
+    },
+    {
+      "name": "Lingqu catalog",
+      "ok": true,
+      "detail": "5 providers, default deepseek/deepseek-v4.1-flash"
+    },
+    {
+      "name": "postgres",
+      "ok": true,
+      "detail": "pg_isready"
+    },
+    {
+      "name": "redis",
+      "ok": true,
+      "detail": "PING/PONG"
+    },
+    {
+      "name": "qdrant",
+      "ok": true,
+      "detail": "/readyz"
+    },
+    {
+      "name": "minio",
+      "ok": true,
+      "detail": "/minio/health/live"
+    }
+  ]
+}

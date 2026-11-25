@@ -95,6 +95,11 @@ class CorrectionLog(Base):
     old_label: Mapped[str | None] = mapped_column(String, nullable=True)
     new_label: Mapped[str] = mapped_column(String)
     source: Mapped[str] = mapped_column(String, default="active")  # active / echo / org
+    # B5-04 / B7-03: which field the correction targets (text/value/emotion/tone).
+    # Existing rows backfill to 'text' in the migration; never NULL afterwards.
+    field: Mapped[str] = mapped_column(
+        String(32), default="text", server_default=sa_text("'text'"), nullable=False
+    )
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_global_candidate: Mapped[bool] = mapped_column(default=False, server_default=sa_text("false"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

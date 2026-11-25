@@ -1,6 +1,6 @@
 """数据导出路由（US-42 · 卡E03 W3 恢复；原实现见 stash 49bed24 考古）
 
-GET /api/v1/export —— 全量 JSON 导出（拍板 D1：元数据+URL，不含图片二进制）
+GET /api/v1/export —— 全量导出（默认 JSON 元数据+URL；format=zip 时语音/文本/元数据进包，照片给签名链接）
   - 登录鉴权（get_current_user）+ 用户隔离（services 层全部按 user_id 过滤）
   - 分页防护：services/export.py 内按 id 键集分块取数 + 每类上限截断（truncated）
   - 限流防护：进程内滑动窗口（每小时每用户上限，防重操作被刷）
@@ -20,6 +20,7 @@ import threading
 import time
 from collections import defaultdict, deque
 from datetime import date, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import Depends, Query
@@ -30,7 +31,7 @@ from app.api import make_router
 from app.api.deps import get_current_user
 from app.db.models import User
 from app.db.session import get_db
-from app.services.export import build_export_payload
+from app.services.export import build_export_payload, build_export_zip
 
 router = make_router(prefix="/api/v1", tags=["export"])
 
@@ -62,12 +63,15 @@ def _json_default(obj):
         return s
     if isinstance(obj, UUID):
         return str(obj)
+    if isinstance(obj, Decimal):
+        return float(obj)
     raise TypeError(f"导出负载含不可序列化类型: {type(obj)}")
 
 
 @router.get("/export")
 def export_user_data(
-    format: str = Query("json", pattern="^json$", description="导出格式（当前仅支持 json）"),
+    format: str = Query("json", pattern="^(json|zip)$", description="导出格式：json 元数据 / zip 归档"),
+    cursor: str | None = Query(None, max_length=2048, description="上一页返回的 next_cursor"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -92,8 +96,42 @@ def export_user_data(
             headers={"Retry-After": str(EXPORT_WINDOW_SECONDS)},
         )
 
-    payload = build_export_payload(db, str(user.id))
-    filename = f"yishu-export-{time.strftime('%Y%m%d')}.json"
+    try:
+        payload = build_export_payload(
+            db, str(user.id), cursor, include_media_links=(format == "zip")
+        )
+    except ValueError:
+        return Response(
+            status_code=422,
+            content=json.dumps(
+                {"code": "VALIDATION_ERROR", "message": "无效的分页游标", "request_id": "",
+                 "details": {"errors": [{"loc": ["query", "cursor"], "msg": "invalid cursor"}]}},
+                ensure_ascii=False,
+            ),
+            media_type="application/json",
+        )
+
+    # B6 审计：只在真实导出成功后留痕；必须显式 commit——get_db 依赖不会自动提交，
+    # 只 flush 的审计行会随会话关闭回滚（四路审判 P0-1：导出审计从未落库）。
+    from app.services.audit import record_audit
+    record_audit(db, str(user.id), action="export_requested", target=format)
+    try:
+        db.commit()
+    except Exception:  # noqa: BLE001 —— 审计写失败不得让已生成的导出失败
+        db.rollback()
+
+    stamp = time.strftime("%Y%m%d")
+    if format == "zip":
+        archive, zip_truncated = build_export_zip(payload)
+        if zip_truncated:
+            payload["truncated"] = True
+        return Response(
+            content=archive,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="yishu-export-{stamp}.zip"'},
+        )
+
+    filename = f"yishu-export-{stamp}.json"
     return Response(
         content=json.dumps(payload, ensure_ascii=False, default=_json_default),
         media_type="application/json",

@@ -510,6 +510,13 @@ class VectorStore:
                     key="tags",
                     match=models.MatchValue(value=value),
                 ))
+            elif key == "person_id" and value:
+                # B5-03: Qdrant payload has no person_ids yet (the relation lives
+                # in PG content_persons). The RAG entry applies a DB post-filter
+                # to every channel, so this branch intentionally emits no clause;
+                # dropping the key silently would be worse, so the post-filter is
+                # mandatory there (rag._filter_hits_by_person).
+                continue
             elif key == "content_class" and value:
                 # P1-A 类目路由（2026-08-25）：按类别过滤（生产 payload 字段
                 # content_class；基准 collection 的 _index 同步写入同名字段）。

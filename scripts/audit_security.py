@@ -38,7 +38,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from secret_patterns import SECRET_PATTERNS as _SECRET_PATTERN_SRC  # noqa: E402
 
 _SECRET_PATTERNS = [re.compile(p) for p in _SECRET_PATTERN_SRC]
-_ALLOW_PATHS = ("tests/", "research/", ".cowork-temp/", "checkpoints/", "models/", "backups/", "scripts/", "skills/")
+_ALLOW_PATHS = (
+    "tests/", "research/", ".cowork-temp/", "checkpoints/", "models/", "backups/",
+    "scripts/", "skills/", ".venv312", ".venv",
+)
 
 
 def _models_source() -> str:

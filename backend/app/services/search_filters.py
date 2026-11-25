@@ -38,6 +38,7 @@ FILTER_KEYS: tuple[str, ...] = (
     "time_to",         # taken_at 上界
     "place",           # 地点（qdrant payload "place" 精确匹配 / db 列相等）
     "tag",             # 实体标签（qdrant payload "tags" / db extra.ci_tags 近似包含）
+    "person_id",       # B5-03 按人过滤（PG join content_persons；Qdrant 召回后统一后置过滤）
     "content_class",   # P1-A 类目路由（qdrant payload "content_class" / db 列）
     "user_id",         # **用户隔离**（跨用户召回防线，缺失即越权可见）
 )

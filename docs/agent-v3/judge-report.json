@@ -1,0 +1,790 @@
+{
+  "generated_at": "2026-11-23T20:41:51.018383+00:00",
+  "verdict": "pass",
+  "static": [],
+  "suite": {
+    "exit": 0,
+    "tail": "......................ss................................................ [ 21%]\n........................................................................ [ 42%]\n........................................................................ [ 63%]\n........................................................................ [ 84%]\n....................................................                     [100%]\n338 passed, 2 skipped in 24.51s\n/Users/silver/GHapp/agent/.venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:306: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\". Set it to \"fixture-scope\" to keep the current behavior.\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n",
+    "per_file": {
+      "test_catalog": {
+        "passed": 5,
+        "failed": 0
+      },
+      "test_credentials": {
+        "passed": 8,
+        "failed": 0
+      },
+      "test_gateway": {
+        "passed": 9,
+        "failed": 0
+      },
+      "test_live": {
+        "passed": 2,
+        "failed": 0
+      },
+      "test_api": {
+        "passed": 17,
+        "failed": 0
+      },
+      "test_backend_http": {
+        "passed": 3,
+        "failed": 0
+      },
+      "test_backend_http_contract": {
+        "passed": 8,
+        "failed": 0
+      },
+      "test_boundary": {
+        "passed": 9,
+        "failed": 0
+      },
+      "test_capture_services": {
+        "passed": 10,
+        "failed": 0
+      },
+      "test_card_import": {
+        "passed": 5,
+        "failed": 0
+      },
+      "test_chunking": {
+        "passed": 5,
+        "failed": 0
+      },
+      "test_contracts": {
+        "passed": 10,
+        "failed": 0
+      },
+      "test_conversation_flow": {
+        "passed": 1,
+        "failed": 0
+      },
+      "test_domains": {
+        "passed": 10,
+        "failed": 0
+      },
+      "test_domains_extra": {
+        "passed": 4,
+        "failed": 0
+      },
+      "test_frame": {
+        "passed": 8,
+        "failed": 0
+      },
+      "test_integration": {
+        "passed": 6,
+        "failed": 0
+      },
+      "test_ledger": {
+        "passed": 12,
+        "failed": 0
+      },
+      "test_librarian": {
+        "passed": 10,
+        "failed": 0
+      },
+      "test_linger_parity": {
+        "passed": 10,
+        "failed": 0
+      },
+      "test_lingqu_api": {
+        "passed": 5,
+        "failed": 0
+      },
+      "test_locomo": {
+        "passed": 2,
+        "failed": 0
+      },
+      "test_lorebook": {
+        "passed": 4,
+        "failed": 0
+      },
+      "test_muse": {
+        "passed": 11,
+        "failed": 0
+      },
+      "test_negative_probes": {
+        "passed": 8,
+        "failed": 0
+      },
+      "test_nightly": {
+        "passed": 6,
+        "failed": 0
+      },
+      "test_obs": {
+        "passed": 5,
+        "failed": 0
+      },
+      "test_openapi": {
+        "passed": 1,
+        "failed": 0
+      },
+      "test_orchestrator": {
+        "passed": 9,
+        "failed": 0
+      },
+      "test_performance": {
+        "passed": 2,
+        "failed": 0
+      },
+      "test_pg_memory": {
+        "passed": 3,
+        "failed": 0
+      },
+      "test_plan": {
+        "passed": 12,
+        "failed": 0
+      },
+      "test_policy": {
+        "passed": 5,
+        "failed": 0
+      },
+      "test_projection": {
+        "passed": 4,
+        "failed": 0
+      },
+      "test_prompt_assets": {
+        "passed": 4,
+        "failed": 0
+      },
+      "test_prompt_bundle": {
+        "passed": 4,
+        "failed": 0
+      },
+      "test_prompts": {
+        "passed": 7,
+        "failed": 0
+      },
+      "test_provenance": {
+        "passed": 8,
+        "failed": 0
+      },
+      "test_registry": {
+        "passed": 5,
+        "failed": 0
+      },
+      "test_replay": {
+        "passed": 1,
+        "failed": 0
+      },
+      "test_sculptor": {
+        "passed": 6,
+        "failed": 0
+      },
+      "test_sculptor_tags": {
+        "passed": 4,
+        "failed": 0
+      },
+      "test_serendipity": {
+        "passed": 3,
+        "failed": 0
+      },
+      "test_tagging": {
+        "passed": 5,
+        "failed": 0
+      },
+      "test_vendor_upstream": {
+        "passed": 1,
+        "failed": 0
+      },
+      "test_import_boundary": {
+        "passed": 5,
+        "failed": 0
+      },
+      "test_upstream_parity_contract": {
+        "passed": 1,
+        "failed": 0
+      },
+      "test_context": {
+        "passed": 6,
+        "failed": 0
+      },
+      "test_crisis": {
+        "passed": 3,
+        "failed": 0
+      },
+      "test_emotion": {
+        "passed": 4,
+        "failed": 0
+      },
+      "test_empathy": {
+        "passed": 6,
+        "failed": 0
+      },
+      "test_memory_read_model": {
+        "passed": 3,
+        "failed": 0
+      },
+      "test_persona": {
+        "passed": 4,
+        "failed": 0
+      },
+      "test_plan_matrix": {
+        "passed": 22,
+        "failed": 0
+      },
+      "test_role_card": {
+        "passed": 9,
+        "failed": 0
+      }
+    }
+  },
+  "mutation": {
+    "total": 18,
+    "killed": 18,
+    "survivors": [],
+    "items": [
+      {
+        "label": "correction-precedence",
+        "file": "memory/ledger.py",
+        "test": "test_ledger.py",
+        "status": "killed",
+        "detail": ""
+      },
+      {
+        "label": "batch-idempotency",
+        "file": "memory/ledger.py",
+        "test": "test_ledger.py",
+        "status": "killed",
+        "detail": ""
+      },
+      {
+        "label": "history-pruned-first",
+        "file": "harness/context.py",
+        "test": "test_frame.py",
+        "status": "killed",
+        "detail": ""
+      },
+      {
+        "label": "degrade-not-empty",
+        "file": "agents/librarian.py",
+        "test": "test_librarian.py",
+        "status": "killed",
+        "detail": ""
+      },
+      {
+        "label": "llm-down-zero-calls",
+        "file": "harness/plan.py",
+        "test": "test_plan.py",
+        "status": "killed",
+        "detail": ""
+      },
+      {
+        "label": "private-claim-needs-citation",
+        "file": "agents/provenance.py",
+        "test": "test_provenance.py",
+        "status": "killed",
+        "detail": ""
+      },
+      {
+        "label": "digest-unavailable",
+        "file": "memory/projection.py",
+        "test": "test_projection.py",
+        "status": "killed",
+        "detail": ""
+      },
+      {
+        "label": "crisis-short-circuit",
+        "file": "harness/orchestrator.py",
+        "test": "test_orchestrator.py",
+        "status": "killed",
+        "detail": ""
+      },
+      {
+        "label": "sculptor-refuses-bad-batch",
+        "file": "agents/sculptor.py",
+        "test": "test_sculptor.py",
+        "status": "killed",
+        "detail": ""
+      },
+      {
+        "label": "sqlite-write-through",
+        "file": "adapters/sqlite_memory.py",
+        "test": "test_ledger.py",
+        "status": "killed",
+        "detail": ""
+      },
+      {
+        "label": "default-profile-must-be-deepseek",
+        "file": "../config/lingqu-catalog.json",
+        "test": "lingqu/test_catalog.py",
+        "status": "killed",
+        "detail": ""
+      },
+      {
+        "label": "admin-never-returns-key",
+        "file": "adapters/lingqu/admin.py",
+        "test": "lingqu/test_gateway.py",
+        "status": "killed",
+        "detail": ""
+      },
+      {
+        "label": "bad-request-does-not-fallback",
+        "file": "adapters/lingqu/gateway.py",
+        "test": "lingqu/test_gateway.py",
+        "status": "killed",
+        "detail": ""
+      },
+      {
+        "label": "card-cannot-move-platform-guard",
+        "file": "prompts/bundle.py",
+        "test": "test_prompt_bundle.py",
+        "status": "killed",
+        "detail": ""
+      },
+      {
+        "label": "lorebook-probability-zero-never-injects",
+        "file": "prompts/cards.py",
+        "test": "test_lorebook.py",
+        "status": "killed",
+        "detail": ""
+      },
+      {
+        "label": "prompt-budget-must-be-enforced",
+        "file": "prompts/bundle.py",
+        "test": "test_prompt_bundle.py",
+        "status": "killed",
+        "detail": ""
+      },
+      {
+        "label": "knowledge-tags-need-asset-layer",
+        "file": "agents/sculptor.py",
+        "test": "test_sculptor_tags.py",
+        "status": "killed",
+        "detail": ""
+      },
+      {
+        "label": "delete-scope-is-per-person",
+        "file": "tools/runtime.py",
+        "test": "test_capture_services.py",
+        "status": "killed",
+        "detail": ""
+      }
+    ]
+  },
+  "probes": {
+    "total": 11,
+    "ok": 11,
+    "items": [
+      {
+        "label": "probe-1-private-needs-cite",
+        "status": "ok",
+        "node": "tests/agentv3/test_negative_probes.py::test_probe_1_private_claim_without_citation_is_not_passed"
+      },
+      {
+        "label": "probe-2-correction-wins",
+        "status": "ok",
+        "node": "tests/agentv3/test_negative_probes.py::test_probe_2_sculptor_cannot_override_user_correction"
+      },
+      {
+        "label": "probe-3-boundary-never-pruned",
+        "status": "ok",
+        "node": "tests/agentv3/test_negative_probes.py::test_probe_3_boundary_is_never_pruned"
+      },
+      {
+        "label": "probe-4-empty-is-not-three-meaning",
+        "status": "ok",
+        "node": "tests/agentv3/test_negative_probes.py::test_probe_4_empty_does_not_carry_three_meanings"
+      },
+      {
+        "label": "probe-5-degraded-no-clarify",
+        "status": "ok",
+        "node": "tests/agentv3/test_negative_probes.py::test_probe_5_degraded_turn_never_asks_a_clarify"
+      },
+      {
+        "label": "probe-6-double-run-idempotent",
+        "status": "ok",
+        "node": "tests/agentv3/test_negative_probes.py::test_probe_6_double_nightly_run_is_idempotent"
+      },
+      {
+        "label": "probe-7-muse-cannot-write",
+        "status": "ok",
+        "node": "tests/agentv3/test_negative_probes.py::test_probe_7_muse_holds_no_write_handle"
+      },
+      {
+        "label": "probe-9-guard-is-first-segment",
+        "status": "ok",
+        "node": "tests/agentv3/test_prompt_bundle.py::test_bundle_has_ten_ordered_segments_and_guard_first"
+      },
+      {
+        "label": "probe-10-knowledge-tags-require-asset",
+        "status": "ok",
+        "node": "tests/agentv3/test_sculptor_tags.py::test_knowledge_tags_require_asset_layer"
+      },
+      {
+        "label": "probe-11-delete-is-scoped",
+        "status": "ok",
+        "node": "tests/agentv3/test_capture_services.py::test_delete_does_not_touch_other_person"
+      },
+      {
+        "label": "probe-8-originals-before-empty",
+        "status": "ok",
+        "node": "tests/agentv3/test_negative_probes.py::test_probe_8_never_says_no_record_without_querying_originals"
+      }
+    ]
+  },
+  "evidence": [
+    {
+      "module": "contracts",
+      "input": "TurnRequest / SearchQuery / MemoryProposal 等外部载荷（pydantic 解析）",
+      "input_validity": "extra=forbid + frozen + 字段约束：未知字段、空文本、>6 alternates、日期倒序均被 422/ValidationError 拒绝",
+      "output": "TurnResult / SearchResult / Verdict 等强类型对象",
+      "output_validity": "字段类型与枚举封闭，测试断言枚举值与预算常量",
+      "tests": "test_contracts.py",
+      "passed": 10,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "ports",
+      "input": "上层调用参数（query / proposal / batch）",
+      "input_validity": "调用方只能经端口契约进入，端口不含业务规则",
+      "output": "契约对象或 PortError 三态（Timeout/Unavailable/Conflict）",
+      "output_validity": "适配失败必须抛错，禁止伪造空结果；由 librarian/ledger 的降级测试反向验证",
+      "tests": "test_boundary.py",
+      "passed": 9,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "plan",
+      "input": "TurnContext（request + now + degraded + hour）",
+      "input_validity": "纯数据、无时钟无 IO；degraded 名称来自端口白名单",
+      "output": "TurnPlan（intent / invocations / budget / write_policy / fallback）",
+      "output_validity": "固定表驱动：6 类意图参数化断言；llm_down 时 llm_calls=0；越界请求 fallback=refuse",
+      "tests": "test_plan.py",
+      "passed": 12,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "obs",
+      "input": "日志字段 / 耗时 / 降级原因",
+      "input_validity": "redact 覆盖敏感键与手机号；字段来自真实调用点",
+      "output": "Span 记录、Degradation 计数、CostMeter 计数",
+      "output_validity": "测试断言脱敏结果与计数，不允许把凭证明文落日志",
+      "tests": "test_obs.py",
+      "passed": 5,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "registry",
+      "input": "AgentName",
+      "input_validity": "枚举封闭：只有五个名字",
+      "output": "AgentSpec / 写入权限断言",
+      "output_validity": "只有 sculptor 可写、只有 muse 可说；越权抛 PermissionError",
+      "tests": "test_registry.py",
+      "passed": 5,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "frame",
+      "input": "人设/关系/边界/修正/digest/叙事/证据 七类文本",
+      "input_validity": "各段按 SEGMENT_CAPS 截断；总预算 4200 字符",
+      "output": "Frame（九段 + dropped 列表 + total_chars）",
+      "output_validity": "段名顺序固定；总量不超预算；边界与修正永不被裁；persona 不低于 220",
+      "tests": "test_frame.py",
+      "passed": 8,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "ledger",
+      "input": "MemoryProposal / ProposalBatch / PurgeScope + person_id",
+      "input_validity": "propose 阶段拒空证据与违反修正；commit 阶段整批校验",
+      "output": "WriteReceipt / CommitReceipt / MemoryEntry / PurgeReceipt / change_log",
+      "output_validity": "三态回执；同批幂等；任一失败整批回滚；双时间链可回放；变更日志由应用写",
+      "tests": "test_ledger.py",
+      "passed": 12,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "policy",
+      "input": "用户原话 + 意图",
+      "input_validity": "GuardRequest 契约；空文本在入口已拒",
+      "output": "GuardVerdict（allow/handoff）+ 禁语检查",
+      "output_validity": "危机即 handoff 且话术不含“已联络”；禁语命中即 reject",
+      "tests": "test_policy.py",
+      "passed": 5,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "projection",
+      "input": "MemoryEntry 列表（可为 None）",
+      "input_validity": "None = 存储不可用；<3 条 = 数据不足，均不伪装成正常",
+      "output": "Digest（八段，≤600 字符，三种 state）",
+      "output_validity": "state 与输入严格对应；超预算按比例裁剪",
+      "tests": "test_projection.py",
+      "passed": 4,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "librarian",
+      "input": "SearchQuery（唯一构造点）+ 端口降级名单",
+      "input_validity": "alternates ≤6 且去重、去本体；日期区间有序",
+      "output": "SearchResult（hits/summaries/trace/status/gaps/clarify）",
+      "output_validity": "RRF(k=60) 排序；两列分开；通道故障=partial 且带 gap；全空且歧义才 clarify；时间只投票不过滤",
+      "tests": "test_librarian.py",
+      "passed": 10,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "muse",
+      "input": "Frame + 用户原话 + locale",
+      "input_validity": "frame 由 build_frame 保证预算与段结构",
+      "output": "回复文本 + 引用标签；非法回复抛 PortError",
+      "output_validity": "空/超长/语言不符/工具越界均被拒；最多 2 步 3 工具",
+      "tests": "test_muse.py",
+      "passed": 11,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "provenance",
+      "input": "ClaimBundle（按句切分）+ 本轮证据 ID + 用户修正",
+      "input_validity": "引用经 label→evidence_id 映射后才进入校验",
+      "output": "Verdict（pass/needs_evidence/mask/reject/handoff）",
+      "output_validity": "私密断言无引用即降级；悬空引用被拒；边界句剔除；修正优先于模型且不可被引用洗白",
+      "tests": "test_provenance.py",
+      "passed": 8,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "sculptor",
+      "input": "episodes 列表 → MemoryProposal 批次",
+      "input_validity": "19 个 issue code 全量校验；证据必须在允许集合内",
+      "output": "CommitReceipt（committed / rejected / rolled_back）",
+      "output_validity": "任一 issue 整批拒绝；干净批次才落库；重复文本转 came_from 不新增行",
+      "tests": "test_sculptor.py",
+      "passed": 6,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "serendipity",
+      "input": "person_id + topics + today（注入的检索函数）",
+      "input_validity": "SearchQuery 直接构造并受契约校验；不依赖其它 Agent",
+      "output": "预热缓存（topic → SearchResult）",
+      "output_validity": "只读、永不写；空结果不入缓存",
+      "tests": "test_serendipity.py",
+      "passed": 3,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "orchestrator",
+      "input": "TurnRequest + degraded 名单",
+      "input_validity": "入口契约校验；越界意图直接 refuse",
+      "output": "TurnResult（reply/cites/verdict/receipts/status/cost/plan/trace）",
+      "output_validity": "危机短路不调用 LLM；LLM 故障返回降级话术且 status=partial；记忆只 propose 不确认；引用标签映射后才计数",
+      "tests": "test_orchestrator.py",
+      "passed": 9,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "prompts",
+      "input": "资产名（persona/muse/sculptor/provenance/guard）",
+      "input_validity": "只接受已存在的 .md；缺失抛 FileNotFoundError，不回退默认文",
+      "output": "提示词文本（进程内 lru_cache）",
+      "output_validity": "五个资产均可加载且长度 >80；guard 文本不含“已联络/已经通知”",
+      "tests": "test_prompts.py",
+      "passed": 7,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "domains",
+      "input": "原始碎片（文本/照片/语音/微信）、角色、当天日期、历史回响记录",
+      "input_validity": "摄入前校验：空/超长/坏来源/重复/高危（T3）一律拒；角色枚举封闭；敏感度确定性分类",
+      "output": "Episode / IngestReceipt / EventNode（四层）/ EchoCandidate / 权限矩阵",
+      "output_validity": "拒因可数；事件四层确定性可复跑；回响六闸全过才出；权限默认拒绝且按角色×敏感度×动作判定",
+      "tests": "test_domains.py",
+      "passed": 10,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "chunking",
+      "input": "原文 + evidence_id + 预算 + 重叠长度",
+      "input_validity": "空文本返回空；预算 <80 抛 ValueError",
+      "output": "TextChunk 列表（offset 指原文、带 evidence_id#index）",
+      "output_validity": "不超预算、offset 可回切原文、相邻块重叠一段、超长单句硬切、index 连续",
+      "tests": "test_chunking.py",
+      "passed": 5,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "integration",
+      "input": "ingest → nightly → ledger → digest → turn 的真实组合（假端口）",
+      "input_validity": "同一 SQLite 账本串起六个模块；检索端口可整体置死；LLM 可置故障",
+      "output": "端到端 TurnResult + Digest + 账本行",
+      "output_validity": "链路可跑通；检索死=partial 且有 gap；危机不进 LLM 不落库；家庭只做可见性透镜；回响零写",
+      "tests": "test_integration.py",
+      "passed": 6,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "replay",
+      "input": "200 条固定 turn（20 组 × 10 次，含闲聊/回忆/记录/设置/越界/情绪）",
+      "input_validity": "文本与意图表固定；时钟固定；假端口无随机",
+      "output": "逐条 intent/status/write_policy/degraded 快照",
+      "output_validity": "与 golden JSON 全等；改一行决策即红",
+      "tests": "test_replay.py",
+      "passed": 1,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "flow",
+      "input": "同一 session 的五轮脚本：寒暄→记录→回忆→设置→越界",
+      "input_validity": "每轮独立 TurnRequest，person_id 固定；无外部随机",
+      "output": "五轮 plan.intent / write_policy / status",
+      "output_validity": "逐轮意图与写入策略全等；未提交批次时账本零写入",
+      "tests": "test_conversation_flow.py",
+      "passed": 1,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "vendor",
+      "input": "Linger 上游 5 个文件（commit 6663e21）+ LOCK.json",
+      "input_validity": "每个文件必须存在、字节数与 sha256 与锁一致；缺失即判 P0",
+      "output": "可复算的钉版台账",
+      "output_validity": "改一个字节即红；commit 写死，不允许漂移",
+      "tests": "test_vendor_upstream.py",
+      "passed": 1,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "pg",
+      "input": "PG 连接/DSN + 同一份 MemoryStore 状态",
+      "input_validity": "无 DSN 或缺 psycopg 时抛 PortUnavailable，不静默空库",
+      "output": "整份 JSONB 文档（单行 id=1），提交后同事务落盘",
+      "output_validity": "重开连接可回读、同批仍幂等；与 SQLite 适配器同一 dump/load 钩子",
+      "tests": "test_pg_memory.py",
+      "passed": 3,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "http",
+      "input": "真实 localhost HTTP 服务（RAG/事件/OpenAI 兼容 LLM）",
+      "input_validity": "适配器只接受配置好的 base_url；缺配置抛 PortUnavailable",
+      "output": "Hit/EventHit/LLMResponse 契约对象",
+      "output_validity": "请求路径、payload 键、响应解析均被断言；错误码映射为端口异常",
+      "tests": "test_backend_http.py",
+      "passed": 3,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "locomo",
+      "input": "LoCoMo-10 数据集（10 段对话 / 1982 条带 gold evidence 的问答）",
+      "input_validity": "逐条校验 dia_id/text 非空且唯一；缺 evidence 的问答不计入分母",
+      "output": "recall@10 与 MRR 两个标量",
+      "output_validity": "固定分词与 BM25 公式，确定性；门槛 recall@10≥0.52、MRR≥0.35",
+      "tests": "test_locomo.py",
+      "passed": 2,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "extras",
+      "input": "排除名单（人/词/日期段）、术语表、情绪原话、账本条目+digest",
+      "input_validity": "空值被忽略；日期段闭区间；诊断词按表匹配",
+      "output": "拒因 / 中性改写 / 线索描述 / 导出清单",
+      "output_validity": "排除三类各一断言；无 confidence/诊断；清单 sha256 可复算",
+      "tests": "test_domains_extra.py",
+      "passed": 4,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "openapi",
+      "input": "app.openapi() 的 paths / schemas / required",
+      "input_validity": "由真实 FastAPI 应用导出，非手写",
+      "output": "字节级快照 golden/openapi_snapshot.json",
+      "output_validity": "路径或字段增删必须同步改 golden，否则测试红",
+      "tests": "test_openapi.py",
+      "passed": 1,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "jobs",
+      "input": "person_id + episodes（夜间一批，含层/证据/日期/撤回标记）",
+      "input_validity": "批次哈希由内容确定性生成；证据可限定 allowed_evidence；空夜不产批",
+      "output": "CommitReceipt（committed/rejected/rolled_back/idempotent）",
+      "output_validity": "同输入重跑幂等；未知证据/事实无证据整批拒绝；叙事层可无证据",
+      "tests": "test_nightly.py",
+      "passed": 6,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "parity",
+      "input": "上游钉版常量与规则（Linger commit 6663e21）",
+      "input_validity": "常量逐条断言：RRF k=60、alternates≤6、19 issue codes",
+      "output": "规则保真结论（两列分离/时间只投票/回滚幂等/修正优先/应用写日志）",
+      "output_validity": "每条规则一个测试，改坏规则即红；另有 tests/contract 入口复验",
+      "tests": "test_linger_parity.py",
+      "passed": 10,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "probes",
+      "input": "八条北星探针（私料无引用/覆盖修正/雷区被裁/empty 三义/degraded 澄清/双跑幂等/写权/未查原文）",
+      "input_validity": "每条探针都有对应的削弱变异（judge/probes.py），先红后绿才算有效",
+      "output": "红→绿证据（每条探针的 weaken → 必红、restore → 必绿）",
+      "output_validity": "judge 报告 probes.ok 必须 8/8；任一 not_red 或 not_green 判阻断",
+      "tests": "test_negative_probes.py",
+      "passed": 8,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "performance",
+      "input": "50 轮假端口 turn + 50 次 Muse 调用",
+      "input_validity": "假端口确定性、无网络；每轮都断言 LLM 调用 ≤2",
+      "output": "P50/P95 毫秒与调用次数",
+      "output_validity": "整轮 P95 ≤5500ms、Muse P95 ≤4200ms；超限即失败",
+      "tests": "test_performance.py",
+      "passed": 2,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "api",
+      "input": "HTTP JSON（TurnRequest）",
+      "input_validity": "422 拒绝缺字段；token 配置时 401",
+      "output": "TurnResult JSON + /health",
+      "output_validity": "response_model 校验输出形状；路由不承载业务逻辑",
+      "tests": "test_api.py",
+      "passed": 17,
+      "failed": 0,
+      "verdict": "ok"
+    },
+    {
+      "module": "adapters",
+      "input": "环境变量配置（base_url/token）与端口调用",
+      "input_validity": "缺配置即 PortUnavailable，绝不静默空结果",
+      "output": "真实 HTTP 响应 → 契约对象；SQLite 持久化文档",
+      "output_validity": "超时/HTTP 错误映射为端口异常；重启后账本可还原且批次仍幂等",
+      "tests": "test_ledger.py",
+      "passed": 12,
+      "failed": 0,
+      "verdict": "ok"
+    }
+  ]
+}

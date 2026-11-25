@@ -1,0 +1,32 @@
+# Agent v2 image: no LangGraph/Coze legacy, no backend source, no DB/Qdrant creds.
+FROM python:3.12-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    AGENT_PORT=8400
+
+WORKDIR /app
+
+# Build from repository root:
+#   docker build -f deploy/Dockerfile.agent-v2 -t yishu-agent-v2 .
+COPY agent/pyproject.toml agent/pyproject.toml
+COPY agent/src agent/src
+COPY shared shared
+COPY agent/assets agent/assets
+COPY agent/.env.example agent/.env.example
+
+RUN pip install --no-cache-dir \
+    "fastapi>=0.121,<1" "uvicorn>=0.38,<1" "pydantic>=2.12,<3" \
+    "python-dotenv>=1.2,<2" "litellm>=1.80,<2" "httpx>=0.27,<1"
+
+# The agent never gets backend source or DB/Qdrant credentials.
+ENV PYTHONPATH=/app/agent/src:/app
+ENV AGENT_CHECKPOINT_PATH=/data/agent-checkpoints.db
+RUN mkdir -p /data
+
+EXPOSE 8400
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8400/v1/health', timeout=4)"
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8400", "--workers", "1"]

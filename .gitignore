@@ -224,3 +224,14 @@ _verify/
 backend/runs/
 .codebuddy/
 nohup.out
+
+# Local scratch from the 2026-11-23 refactor run; not a deliverable
+.tmp-migration/
+.env.agent-local
+.env
+.pytest_cache/
+
+# Local L0 docker state (volumes are re-creatable; never commit)
+deploy/data/
+
+deploy/.env
