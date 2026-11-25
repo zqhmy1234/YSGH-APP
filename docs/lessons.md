@@ -9,6 +9,15 @@
 
 ---
 
+### 2026-11-25 11:09 · commit c7edf5b · ts=1795576164
+- **错误**：合入 origin/develop 的 28 个提交后，review_agent --full --skip-tests 报 lint 31 条 + openapi_snapshot/audit_axes 红
+- **根因**：远程 B4-B6/B7 代码未在本机重过静态门：response_brief.py 整句中文超 120 列、chat.py 未用导入、B6 测试导入未排序/lambda/超长行、deploy 脚本 S310/PLW0603；新增 7 条 trust/echo 路由未重导 docs/openapi.json
+- **修复**：ruff 自动修 F401/I001；手工改 lambda 与超长测试行；中文模板与 deploy 脚本加 per-file ignore；python scripts/gen_openapi.py 重导快照
+- **相关文件**：backend/app/domain/human/response_brief.py; backend/tests/test_b6_adversarial.py; backend/app/api/chat.py; deploy/litellm-gateway/; ruff.toml; docs/openapi.json
+- **教训**：合并外部大分支后先跑静态全量门禁，把格式与契约债随合并一起清；契约快照必须用 gen_openapi 重导而不是手改
+
+---
+
 ### 2026-11-24 03:19 · commit 58ff44f · ts=1795461579
 - **错误**：B7改造后 chat.py 触及 600 行结构阈值
 - **根因**：把 persona 快照读取和历史分页都塞回路由文件；新增能力时没有先做模块拆分

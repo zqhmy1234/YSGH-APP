@@ -25,9 +25,6 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import event, func, select
-
 from app.api import deps
 from app.db.models import (
     AuditLog,
@@ -44,6 +41,8 @@ from app.services import consent as consent_svc
 from app.services import vault as vault_svc
 from app.services.audit import AUDIT_ACTIONS, list_audit
 from app.services.export import build_export_payload, encode_cursor
+from fastapi.testclient import TestClient
+from sqlalchemy import event, func, select
 
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("profile_crypto_keys")]
 
@@ -575,7 +574,7 @@ def test_locked_photo_has_no_download_url(db_user, monkeypatch):
         def get_download_url(self, key, user_id="", ttl=900):
             return f"https://cdn.example/{key}?uid={user_id}"
 
-    monkeypatch.setattr(storage_mod, "get_storage_backend", lambda: FakeStorage())
+    monkeypatch.setattr(storage_mod, "get_storage_backend", FakeStorage)
     db, user = db_user
     uid = str(user.id)
     c = _content(db, uid, content_type="photo", cos_key="photos/secret.jpg")
@@ -593,7 +592,7 @@ def test_unlocked_photo_media_link_restored(db_user, monkeypatch):
         def get_download_url(self, key, user_id="", ttl=900):
             return f"https://cdn.example/{key}?uid={user_id}"
 
-    monkeypatch.setattr(storage_mod, "get_storage_backend", lambda: FakeStorage())
+    monkeypatch.setattr(storage_mod, "get_storage_backend", FakeStorage)
     db, user = db_user
     uid = str(user.id)
     c = _content(db, uid, content_type="photo", cos_key="photos/open.jpg")
@@ -857,7 +856,10 @@ def test_vault_list_limit_boundary(db_user, limit):
     "case",
     [
         ("consent_unknown_scope", "PUT", "/api/v1/trust/consents", {"scope": "nope", "granted": True}, None, 422),
-        ("consent_extra_field", "PUT", "/api/v1/trust/consents", {"scope": "model_training", "granted": True, "x": 1}, None, 422),
+        (
+            "consent_extra_field", "PUT", "/api/v1/trust/consents",
+            {"scope": "model_training", "granted": True, "x": 1}, None, 422,
+        ),
         ("consent_missing_granted", "PUT", "/api/v1/trust/consents", {"scope": "model_training"}, None, 422),
         ("audit_unknown_action", "GET", "/api/v1/trust/audit", None, {"action": "nope"}, 422),
         ("audit_limit_zero", "GET", "/api/v1/trust/audit", None, {"limit": 0}, 422),
