@@ -44,7 +44,26 @@ from sqlalchemy import create_engine
 # `app/db/models/profile.py:91 ProfileL2Evidence`）⇒ **不再构成漂移**。
 # 清空后本测试的语义变成"库里不存在任何无模型表"= 理想态 ✓。
 # ⚠️ 将来若再出现"有意无模型"的表，必须在此写明理由与销项触发（本清单即豁免池）。
-KNOWN_DRIFT_TABLES: set[str] = set()
+KNOWN_DRIFT_TABLES: set[str] = {
+    # Agent V3 旧账本（迁移 a7f3c2e91b44 / b8c4d2f0a1e5 建表，无 ORM 模型）。
+    # B5 迁到 canonical memory_entries 后按 f6a7b8c9d0e1 头注释**原样保留一个版本**
+    # 作为回滚快照；autogenerate 若把它们判成 remove_table 会不可逆删数据。
+    # 销项触发：V3 回滚窗口结束、确认不再需要旧账本后再删表并从本清单移除。
+    "agent_v3_episode_tags",
+    "agent_v3_links",
+    "agent_v3_memory_batches",
+    "agent_v3_memory_change_log",
+    "agent_v3_memory_corrections",
+    "agent_v3_memory_drafts",
+    "agent_v3_memory_entries",
+    "agent_v3_memory_state",
+    "agent_v3_memory_tags",
+}
+
+# 迁移链独有、空库自举（Base.metadata.create_all + stamp head）不会创建的表。
+# 局部：已有库走增量迁移 → 它们存在、属于漂移；CI：全新库走自举 → 它们本就不存在。
+# 因此「缺席」不能算清单过期；但真出现时仍受 KNOWN_DRIFT_TABLES 的登记约束。
+OPTIONAL_ABSENT_DRIFT_TABLES: set[str] = set(KNOWN_DRIFT_TABLES)
 
 
 @pytest.fixture(scope="module")
@@ -89,7 +108,7 @@ def test_no_new_untracked_tables(remove_tables):
 
 def test_known_drift_list_has_no_stale_entries(remove_tables):
     """已知清单里已消失的表要移除（清单过期会让守卫失去意义）。"""
-    stale = KNOWN_DRIFT_TABLES - remove_tables
+    stale = KNOWN_DRIFT_TABLES - remove_tables - OPTIONAL_ABSENT_DRIFT_TABLES
     assert not stale, (
         f"已知漂移清单里有 {len(stale)} 张表已经不在漂移里了（可能已补模型）：{sorted(stale)}\n"
         "请把它们从 KNOWN_DRIFT_TABLES 移除，保持清单与真实漂移一致。"

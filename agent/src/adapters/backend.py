@@ -24,11 +24,11 @@ def _post(url: str, payload: dict, *, timeout_s: float, headers: dict[str, str] 
         with urllib.request.urlopen(request, timeout=timeout_s) as response:
             return json.loads(response.read().decode("utf-8"))
     except TimeoutError:
-        raise PortTimeout("http", f"timeout after {timeout_s}s")
+        raise PortTimeout("http", f"timeout after {timeout_s}s") from None
     except urllib.error.HTTPError as exc:
-        raise PortUnavailable("http", f"http {exc.code}")
+        raise PortUnavailable("http", f"http {exc.code}") from exc
     except urllib.error.URLError as exc:
-        raise PortUnavailable("http", f"unreachable: {exc.reason}")
+        raise PortUnavailable("http", f"unreachable: {exc.reason}") from exc
 
 
 class BackendLLM:

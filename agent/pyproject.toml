@@ -86,6 +86,15 @@ ignore = [
     "BLE001",
 ]
 
+[tool.ruff.lint.isort]
+# `X as X` 是显式重导出；合并回一个 import 块，避免被拆成十段
+combine-as-imports = true
+
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]
+# 测试用它自己的固定时钟/占位 token，不是生产误用（与根仓研究目录同口径）
+"tests/**" = ["S101", "S106", "DTZ001", "DTZ005", "DTZ011", "B015", "B017"]
 "scripts/probe_model.py" = ["E402"]  # must load the target env before importing provider settings
+# judge 是本地测试夹具：跑 pytest 子进程、读自己生成的 junit、用 /tmp 工作区
+"src/judge/**" = ["S108", "S603", "PLW1510", "S314", "E501"]
+# base_url 来自 AGENT_BACKEND_URL 配置，不是用户输入；S310 的 file:// 风险不成立
+"src/adapters/backend.py" = ["S310"]

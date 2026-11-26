@@ -27,7 +27,9 @@ class CheckpointStore:
         if self._conn is None:
             self._conn = sqlite3.connect(self._path, isolation_level=None, check_same_thread=False)
             self._conn.execute(
-                "CREATE TABLE IF NOT EXISTS checkpoints (thread_id TEXT PRIMARY KEY, state TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+                "CREATE TABLE IF NOT EXISTS checkpoints ("
+                "thread_id TEXT PRIMARY KEY, state TEXT NOT NULL, "
+                "updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
             )
         return self._conn
 
@@ -41,7 +43,9 @@ class CheckpointStore:
         if not thread_id:
             raise PortUnavailable("checkpoint", "thread_id required")
         self._connection().execute(
-            "INSERT INTO checkpoints(thread_id, state) VALUES(?, ?) ON CONFLICT(thread_id) DO UPDATE SET state=excluded.state, updated_at=CURRENT_TIMESTAMP",
+            "INSERT INTO checkpoints(thread_id, state) VALUES(?, ?) "
+            "ON CONFLICT(thread_id) DO UPDATE SET state=excluded.state, "
+            "updated_at=CURRENT_TIMESTAMP",
             (thread_id, json.dumps(state, ensure_ascii=False)),
         )
 

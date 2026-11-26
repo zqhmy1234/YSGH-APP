@@ -118,7 +118,11 @@ class StablePrompt:
     def cache_key(self) -> str:
         import hashlib
 
-        material = f"{self.version}|{self.persona}|{self.relationship_note}|{self.response_brief}|{self.relation}|{'|'.join(self.boundaries)}|{'|'.join(self.corrections)}|{'|'.join(self.taboo)}"
+        material = (
+            f"{self.version}|{self.persona}|{self.relationship_note}|"
+            f"{self.response_brief}|{self.relation}|"
+            f"{'|'.join(self.boundaries)}|{'|'.join(self.corrections)}|{'|'.join(self.taboo)}"
+        )
         return hashlib.sha256(material.encode("utf-8")).hexdigest()[:24]
 
 
@@ -202,16 +206,10 @@ class ContextAssembler:
     ) -> AssembledContext:
         budget = budget or ContextBudget()
         state = dict(frame or {})
-        brief_text = (
-            "# 1.5 这一轮她准备怎么回应\n" + stable.response_brief
-            if stable.response_brief.strip()
-            else ""
-        )
+        brief_text = "# 1.5 这一轮她准备怎么回应\n" + stable.response_brief if stable.response_brief.strip() else ""
         segments = [
             FrameSegment(name="global", text=_clip(GLOBAL_CONSTRAINTS, SEGMENT_CAPS["global"]), stable=True),
-            FrameSegment(
-                name="persona", text=_clip(self._persona_text(stable), SEGMENT_CAPS["persona"]), stable=True
-            ),
+            FrameSegment(name="persona", text=_clip(self._persona_text(stable), SEGMENT_CAPS["persona"]), stable=True),
             FrameSegment(
                 name="response_brief",
                 text=_clip(brief_text, SEGMENT_CAPS["response_brief"]),

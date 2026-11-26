@@ -20,21 +20,17 @@ import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import yaml
 
 
 def _request(method: str, url: str, key: str, payload: dict | None = None) -> tuple[int, object]:
-    endpoint = urlsplit(url)
-    if endpoint.scheme not in {"http", "https"} or not endpoint.hostname:
-        raise ValueError("LiteLLM endpoint must be an HTTP(S) URL with a host")
     data = None if payload is None else json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(url, data=data, method=method)  # noqa: S310
+    request = urllib.request.Request(url, data=data, method=method)
     request.add_header("Authorization", f"Bearer {key}")
     request.add_header("Content-Type", "application/json")
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
+        with urllib.request.urlopen(request, timeout=60) as response:
             body = response.read().decode("utf-8")
             return response.status, json.loads(body) if body else None
     except urllib.error.HTTPError as exc:

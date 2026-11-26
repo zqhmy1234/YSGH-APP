@@ -135,9 +135,8 @@ jobs:
         working-directory: agent
         run: uv run python -m compileall -q src tests scripts
 
-      - name: Initialize isolated Agent test database
-        working-directory: agent
-        run: uv run python scripts/init_test_db.py
+      # Agent 测试不连真实 PG（PG 适配器用假连接覆盖）；memories / knowledge_collections
+      # 等三表归 backend 迁移所有，agent 侧不再自建测试库（2026-11-25 移除死脚本）。
 
       - name: Run Agent tests
         working-directory: agent

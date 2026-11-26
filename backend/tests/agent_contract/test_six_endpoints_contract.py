@@ -1,7 +1,8 @@
-"""Check the current internal routes and preserve the six original L3 endpoints.
+"""The six L3 agent endpoints are exactly the six the agent adapter speaks.
 
-The exact route set covers the documented additional read and write operations.
-It is checked against the FastAPI app so handler changes cannot silently drift.
+This is the drift guard for plan §3.3: if someone adds a seventh "agent" path or
+renames one of the six, the agent's BackendHTTP silently starts 404ing. The
+assertion is against the FastAPI app, not against a doc string.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ EXPECTED = {
     ("DELETE", "/api/v1/persons/agent/{person_id}"),
     ("POST", "/api/v1/echo/agent"),
     ("GET", "/api/v1/memory/agent"),
+    # B5 canonical ledger 的写/删路径（agent BackendHTTP.write_memory/delete_memory）
     ("POST", "/api/v1/memory/agent"),
     ("DELETE", "/api/v1/memory/agent/{entry_id}"),
     ("GET", "/api/v1/persona/agent"),

@@ -98,7 +98,9 @@ class Orchestrator:
         self._muse.set_system_prefix(text)
 
     def _now(self) -> datetime:
-        return self._clock.now() if self._clock else datetime.now()
+        if self._clock:
+            return self._clock.now()
+        return datetime.now()  # noqa: DTZ005 —— FakeClock 为 naive，服务内统一 naive UTC
 
     def _claims(self, reply: str, labels: Mapping[str, str] | None = None) -> tuple[Claim, ...]:
         labels = labels or {}
@@ -201,9 +203,7 @@ class Orchestrator:
                     )
                     corrections = tuple(c.value for c in snap.corrections if c.field == "text")
                     if snap.narrative:
-                        b5_narrative = "【B5 记忆事实】" + "；".join(
-                            e.text for e in snap.narrative[:3]
-                        ) + "。"
+                        b5_narrative = "【B5 记忆事实】" + "；".join(e.text for e in snap.narrative[:3]) + "。"
             except Exception:  # noqa: BLE001 —— B5 是可选升级路径，失败必须降级不崩
                 degradation.note("b5_memory_fallback")
 

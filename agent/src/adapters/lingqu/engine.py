@@ -125,4 +125,4 @@ def _json_args(value: object) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
-__all__ = ["EngineError", "FakeEngine", "LiteLLMEngine", "ModelEngine", "ProviderTimeout"]
+__all__ = ["EngineError", "FakeEngine", "LiteLLMEngine", "ModelEngine"]

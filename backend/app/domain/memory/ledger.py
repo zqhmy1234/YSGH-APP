@@ -20,8 +20,8 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any, Protocol, runtime_checkable
 
-from sqlalchemy import func, select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.models.memory import MemoryEntry
@@ -136,8 +136,6 @@ class MemoryWritePort:
         if db is None:
             raise TypeError("db is required when no old_store is configured")
         if self.dual_write_enabled:
-            # A retry with the same idempotency key must observe both committed writes.
-            db.execute(select(func.pg_advisory_xact_lock(int(entry_id[2:], 16))))
             existing = db.get(MemoryEntry, entry_id)
             if existing is not None:
                 return MemoryWriteResult(
@@ -146,7 +144,28 @@ class MemoryWritePort:
                 )
 
         old = self._find_old_duplicate(db, user_id=user_id, text=text)
-        old_id = old.id if old else self._insert_old(db, user_id, text, summary)
+        if old is None:
+            old = Memory(
+                user_id=str(user_id),
+                content=text,
+                summary=summary or text[:120],
+                content_format="text",
+                content_hash=_content_hash(text),
+                dedup_bucket=int(time.time() // _DEDUP_WINDOW_SECONDS),
+                importance=3,
+            )
+            try:
+                # 并发同键：部分唯一索引 uq_memories_user_hash_bucket 是最终裁决。
+                # 失败方回滚 savepoint 后重读赢家已提交的行，收敛到同一条——
+                # 不让「SELECT 判重 → INSERT」之间的 TOCTOU 变成调用方错误。
+                with db.begin_nested():
+                    db.add(old)
+                    db.flush()
+            except IntegrityError:
+                old = self._find_old_duplicate(db, user_id=user_id, text=text)
+                if old is None:
+                    raise
+        old_id = old.id
 
         if not self.dual_write_enabled:
             return MemoryWriteResult(
@@ -189,33 +208,6 @@ class MemoryWritePort:
             old_memory_id=old_id,
             entry_id=entry_id,
         )
-
-    @staticmethod
-    def _insert_old(db: Session, user_id: str, text: str, summary: str) -> int:
-        content_hash = _content_hash(text)
-        bucket = int(time.time() // _DEDUP_WINDOW_SECONDS)
-        statement = (
-            insert(Memory).values(
-                user_id=str(user_id),
-                content=text,
-                summary=summary or text[:120],
-                content_format="text",
-                content_hash=content_hash,
-                dedup_bucket=bucket,
-                importance=3,
-            )
-            .on_conflict_do_nothing(
-                index_elements=[Memory.user_id, Memory.content_hash, Memory.dedup_bucket],
-                index_where=Memory.content_hash.is_not(None) & Memory.dedup_bucket.is_not(None),
-            )
-            .returning(Memory.id)
-        )
-        old_id = db.execute(statement).scalar_one_or_none()
-        if old_id is not None:
-            return old_id
-        return db.execute(select(Memory.id).where(
-            Memory.user_id == str(user_id), Memory.content_hash == content_hash, Memory.dedup_bucket == bucket
-        )).scalar_one()
 
     def _write_stores(
         self,

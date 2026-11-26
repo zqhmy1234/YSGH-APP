@@ -1,4 +1,5 @@
 """B5 merge: Agent writes canonical memory via backend, not a local JSON store."""
+
 from __future__ import annotations
 
 import sys
@@ -101,10 +102,15 @@ def test_hydrate_loads_backend_narrative_for_dedup():
     backend = _FakeBackendHTTP()
     backend.snapshot = {
         "status": "ok",
-        "narrative": [{
-            "entry_id": "m_000000000001", "text": "历史记忆",
-            "evidence": ["e0"], "valid_from": "2026-01-01", "story_arc": "",
-        }],
+        "narrative": [
+            {
+                "entry_id": "m_000000000001",
+                "text": "历史记忆",
+                "evidence": ["e0"],
+                "valid_from": "2026-01-01",
+                "story_arc": "",
+            }
+        ],
     }
     store = BackendMemoryStore(backend)
     assert store.hydrate("p1") == 1
@@ -129,6 +135,7 @@ def test_write_payload_is_schema_compatible():
     store.commit(_batch())
     w = backend.writes[0]
     import re
+
     assert re.fullmatch(r"m_[0-9a-f]{12}", w["entry_id"])
     assert w["kind"] in {"episode", "impression", "story_segment", "emotion_trace"}
     assert w["layer"] in {"narrative", "fact_claim"}
@@ -142,25 +149,30 @@ def test_propose_writes_through_without_nightly():
 
     backend = _FakeBackendHTTP()
     store = BackendMemoryStore(backend)
-    prop = MemoryProposal(op=OpKind.ADD, layer=MemoryLayer.NARRATIVE,
-                          text="对话自动记忆", evidence=("e1",), reason="turn_capture")
+    prop = MemoryProposal(
+        op=OpKind.ADD, layer=MemoryLayer.NARRATIVE, text="对话自动记忆", evidence=("e1",), reason="turn_capture"
+    )
     receipt = store.propose(prop, person_id="p1")
     assert receipt.state is WriteState.CONFIRMED, f"propose 必须直写 canonical，实际 {receipt}"
     assert len(backend.writes) == 1 and backend.writes[0]["text"] == "对话自动记忆"
 
 
-@pytest.mark.parametrize("layer,expected", [
-    ("narrative", "narrative"), ("fact", "fact_claim"),
-    ("preference", "narrative"), ("asset", "narrative"),
-])
+@pytest.mark.parametrize(
+    "layer,expected",
+    [
+        ("narrative", "narrative"),
+        ("fact", "fact_claim"),
+        ("preference", "narrative"),
+        ("asset", "narrative"),
+    ],
+)
 def test_layer_mapping_matches_backend_enum(layer, expected):
     """[NAIL] 审判 P0-2：agent 四层 → backend 两层，否则非 narrative 整批 422。"""
     from harness.contracts import MemoryLayer, MemoryProposal, OpKind
 
     backend = _FakeBackendHTTP()
     store = BackendMemoryStore(backend)
-    prop = MemoryProposal(op=OpKind.ADD, layer=MemoryLayer(layer),
-                          text=f"{layer}记忆", evidence=("e1",), reason="test")
+    prop = MemoryProposal(op=OpKind.ADD, layer=MemoryLayer(layer), text=f"{layer}记忆", evidence=("e1",), reason="test")
     store.propose(prop, person_id="p1")
     assert backend.writes[0]["layer"] == expected
     assert backend.writes[0]["layer"] in {"narrative", "fact_claim"}
@@ -172,8 +184,7 @@ def test_purge_deletes_backend_rows_no_resurrect():
 
     backend = _FakeBackendHTTP()
     store = BackendMemoryStore(backend)
-    prop = MemoryProposal(op=OpKind.ADD, layer=MemoryLayer.NARRATIVE,
-                          text="待删除", evidence=("e1",), reason="test")
+    prop = MemoryProposal(op=OpKind.ADD, layer=MemoryLayer.NARRATIVE, text="待删除", evidence=("e1",), reason="test")
     store.propose(prop, person_id="p1")
     assert len(backend.writes) == 1
     eid = backend.writes[0]["entry_id"]
@@ -196,8 +207,7 @@ def test_rejected_backend_write_is_not_silently_success():
 
     backend = _RejectBackend()
     store = BackendMemoryStore(backend)
-    prop = MemoryProposal(op=OpKind.ADD, layer=MemoryLayer.NARRATIVE,
-                          text="会被拒", evidence=("e1",), reason="test")
+    prop = MemoryProposal(op=OpKind.ADD, layer=MemoryLayer.NARRATIVE, text="会被拒", evidence=("e1",), reason="test")
     with pytest.raises(PortUnavailable):
         store.propose(prop, person_id="p1")
 
@@ -210,8 +220,9 @@ def test_entry_id_stable_across_processes():
     for _ in range(2):
         backend = _FakeBackendHTTP()
         store = BackendMemoryStore(backend)
-        prop = MemoryProposal(op=OpKind.ADD, layer=MemoryLayer.NARRATIVE,
-                              text="同一句话", evidence=("e1",), reason="test")
+        prop = MemoryProposal(
+            op=OpKind.ADD, layer=MemoryLayer.NARRATIVE, text="同一句话", evidence=("e1",), reason="test"
+        )
         store.propose(prop, person_id="p1")
         ids.append(backend.writes[0]["entry_id"])
     assert ids[0] == ids[1], f"跨进程重试 entry_id 不稳定：{ids}"

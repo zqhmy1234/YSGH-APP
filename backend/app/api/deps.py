@@ -207,9 +207,14 @@ def load_owned_entity(
     """
     # 畸形 ID 视同不存在（404），不让 PG 的 UUID 转换异常升级成 500（审判 P1）。
     # 不区分「格式非法」与「不存在」——保持 IDOR 防护的存在性不可探测语义。
-    if isinstance(model.id.type, Uuid):
+    # 只对 UUID 主键模型生效：messages.id 是 BigInt，若一律按 UUID 校验会把
+    # 合法整数 ID 全判成畸形（2026-11-25 修复：消息已读接口 404）。
+    import uuid as _uuid
+
+    pk = model.__table__.columns.get("id")
+    if pk is not None and isinstance(pk.type, Uuid):
         try:
-            uuid.UUID(str(entity_id))
+            _uuid.UUID(str(entity_id))
         except (ValueError, AttributeError, TypeError) as exc:
             raise ApiError(error_code, message, http=http) from exc
     conditions = [model.id == entity_id, model.user_id == user_id]

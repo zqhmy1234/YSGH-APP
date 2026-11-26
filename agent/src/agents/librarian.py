@@ -51,8 +51,8 @@ class Librarian:
     ) -> SearchQuery:
         """The single place that builds a SearchQuery: all channels share it."""
         cleaned: list[str] = []
-        for alt in alternates:
-            alt = (alt or "").strip()[:MAX_ALTERNATE_CHARS]
+        for raw in alternates:
+            alt = (raw or "").strip()[:MAX_ALTERNATE_CHARS]
             if alt and alt != text.strip() and alt not in cleaned:
                 cleaned.append(alt)
         return SearchQuery(

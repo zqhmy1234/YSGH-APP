@@ -124,9 +124,7 @@ class RoleCard(_Strict):
 
     def render(self) -> str:
         """Render the person into the #1 persona segment, under the global guard."""
-        sections: list[str] = [
-            f"你现在是{self.display_name}。不要解释这张人物卡，也不要跳出她。"
-        ]
+        sections: list[str] = [f"你现在是{self.display_name}。不要解释这张人物卡，也不要跳出她。"]
         if self.description:
             sections.append("【她是谁】\n" + self.description.strip())
         if self.personality:

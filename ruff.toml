@@ -53,3 +53,5 @@ known-first-party = ["scripts"]
 "backend/app/services/wechat/signature.py" = ["S324"]  # msg_signature=SHA1 是企微协议强制（path/90931 官方向量），非自主选择
 "backend/app/api/contents.py" = ["S106"]  # presign mock 凭证是契约占位，非真实密钥
 "backend/app/core/config.py" = ["S105", "S104"]  # 默认值占位（.env 覆盖），非真实密钥
+"backend/app/domain/human/response_brief.py" = ["E501"]  # 中文模板句按整句成行（数据表，非代码行；拆分反损可读性）
+"deploy/litellm-gateway/*.py" = ["S310", "PLW0603"]  # 运维脚本：访问固定的本地 LiteLLM 网关；_patched 为模块级幂等开关

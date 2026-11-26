@@ -202,9 +202,7 @@ class BackendHTTP:
         )
 
     # ---------------------------------------------------------------- echo (B4)
-    def echo(
-        self, person_id: str, *, local_date: str, limit: int = 1
-    ) -> tuple[tuple[EchoCandidate, ...], str]:
+    def echo(self, person_id: str, *, local_date: str, limit: int = 1) -> tuple[tuple[EchoCandidate, ...], str]:
         """Read-only echo candidates for the ECHO intent (B4 agent-side wiring).
 
         Backend ``POST /api/v1/echo/agent`` reuses ``peek_today_echo``: no EchoHistory
@@ -289,7 +287,7 @@ class BackendSearchHTTP:
     real second call — but only when the turn actually asks for a time window.
     """
 
-    def __init__(self, client: "BackendHTTP") -> None:
+    def __init__(self, client: BackendHTTP) -> None:
         self._client = client
         self._last_key: str | None = None
         self._last_hits: list[Hit] = []
@@ -317,12 +315,10 @@ class BackendSearchHTTP:
 class BackendEventsHTTP:
     """``EventPort`` over the unified search endpoint's event projection."""
 
-    def __init__(self, client: "BackendHTTP") -> None:
+    def __init__(self, client: BackendHTTP) -> None:
         self._client = client
 
-    def hits(
-        self, person_id: str, *, from_: date | None, to: date | None, keywords: Sequence[str]
-    ) -> list[EventHit]:
+    def hits(self, person_id: str, *, from_: date | None, to: date | None, keywords: Sequence[str]) -> list[EventHit]:
         return self._client.event_hits(person_id, from_=from_, to=to, keywords=keywords)
 
 

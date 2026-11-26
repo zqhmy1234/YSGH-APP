@@ -5,7 +5,7 @@
 > **只准引用，不准复述**（历史上正是"五处各写一份数字"导致漂移）。
 > **每个会话结束前必须更新本文件**：流水写 `progress.md`（追加式），决策写 `docs/决策台账.md`。
 
-**最后更新**：2026-11-25
+**最后更新**：2026-11-26
 **分支**：以 `git branch --show-current` 为准 ｜ **最近提交**：以 `git log -1 --oneline` 为准
 （历史批次进展见 `git log`——此处**故意不写提交条数**：本行随每次更新滞后一次，
 写死数字必然失真，正是本项目反复吃亏的"数字漂移"。想知道精确次数：`git log --oneline --since=midnight`）
@@ -14,7 +14,7 @@
 
 ## 正在做什么
 
-**2026-11-25 后端 B-3 步骤 8**：已合入最新 `origin/develop@c7edf5b`。观察期已届满，生产只读复核 API/worker 和密钥一致性，敏感话题表仍为 0 行，旧 `topic` 列存在。生产 API 与常驻 worker 都仍映射旧列，生产库为 `e7b8c9d0e1f2`。已完成本地独立删列、B-3 迁移前校验及今日备份的 D 盘副本恢复、升级、回退和重升。B-3 定向回归通过。基线修复见 `24d10ec`。合流前发布候选本地全量门禁通过，1,658 项测试通过，覆盖率 84.85%。最终候选的门禁见 [PR #6](https://github.com/zqhmy1234/YSGH-APP/pull/6)。正式发布先核准前置的 B-4/B-6 基线及 API/worker/cron 切换，待发布提交的门禁通过并获用户部署确认后才执行生产迁移。复核项见 `docs/步骤3_观察届满复核清单_20261125.md`，实测证据和发布顺序见 `docs/后端步骤8_明文列退出演练_20261125.md`。
+**2026-11-26 后端 B-3 步骤 8**：已合入 `origin/develop@c1fbe56`。观察期已届满，生产只读复核 API/worker 和密钥一致性，敏感话题表仍为 0 行，旧 `topic` 列存在。生产 API 与常驻 worker 都仍映射旧列，生产库为 `e7b8c9d0e1f2`。已完成本地独立删列、B-3 迁移前校验及今日备份的 D 盘副本恢复、升级、回退和重升。B-3 定向回归通过。基线修复见 `24d10ec`。前一候选的后端门禁通过，Agent 基线问题已由 `develop@c1fbe56` 的绿色 CI 收口。本轮采用最新 develop 的基线修复，保留独立删列迁移。最终提交的门禁见 [PR #6](https://github.com/zqhmy1234/YSGH-APP/pull/6)。正式发布先核准前置的 B-4/B-6 基线及 API/worker/cron 切换，待发布提交的门禁通过并获用户部署确认后才执行生产迁移。复核项见 `docs/步骤3_观察届满复核清单_20261125.md`，实测证据和发布顺序见 `docs/后端步骤8_明文列退出演练_20261125.md`。
 
 **2026-11-24 B7“有人味”改造已落到代码（历史快照）**：六张角色卡改成六个人（小忆/忆生/阿静/阿言/小树/阿册），每张有人物叙述、2–3 段示例对话、生活条目、作者手记、完整禁语和记忆边界；`render()` 不再渲染 `traits` 数字、`creator_notes`、`source_profile`。后端 `user_ai_persona` 改为 `initiative/density/advice_bias` 三组关系约定，新增迁移 `e7b8c9d0e1f2`，`GET/PUT /api/v1/persona` 与 `/options` 返回完整段落。新增 `ResponseBrief` 七段完整回应说明，替代情绪标签/置信度。非流式与流式聊天都已把 `persona{role_id,relationship_note,version}` 和 `response_brief` 传给 Agent；Agent 按请求加载角色卡，上下文升为十段（关系约定 + 人物卡 + 回应说明）。设置页新增“她怎么陪你”，六张卡 + 三组完整句子 + 保存；访谈页/RecordSheet 的情绪 chip 已移除。验证：Agent 全量 **337 passed / 2 skipped**；`review_agent.py --full --skip-tests` **passed**（openapi 已重导、结构棘轮通过；HBuilderX 缺失降级放行；backup 域 WARN 不阻断）。**2026-11-24 02:30–03:45 追加收口**：本机已起完整 L0（Colima + PG16/pgvector + Redis + Qdrant + MinIO + agent + backend + worker），`alembic upgrade head` 在真库执行到 **`e7b8c9d0e1f2`** 且 `alembic check` 无漂移；后端全量 **1332 passed / 22 deselected**；BGE-M3 权重（2,271,145,830 字节）落盘并只读挂载，检索不再降级；后端→Agent 真实对话打通（回复引用 `[S1]`），Agent→后端 `/api/v1/search/agent` 200；服务器 `docker compose` 插件已修（原 HTML → v5.8.0 ELF），5 个探针测试 Key 已清理。**仍未做**：服务器 staging :8300 切流、服务器 backend 升级、客户端 HBuilderX 编译；五家 provider 仍只有 DeepSeek 真通。证据见 `docs/agent-v3/verification-evidence.md` / `local-l0-docker.md`。下一步：按 A 方案拆 4 个 commit → 推送 → 再做发布切换。
 
