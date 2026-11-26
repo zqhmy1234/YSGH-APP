@@ -1027,3 +1027,10 @@ ShareSheet（须真机验"保存到相册"）。
 - 产物：`deploy/litellm-gateway/litellm_db_enable.sh`（一键启用，预热 Prisma + 写 DB URL + 切配置）、`deploy/litellm-gateway/README.db-mode.md`（操作/验收/回滚）、`docs/agent-v3/litellm-db-mode_20261123.md`（证据）；`deploy/litellm-gateway/README.md` 改为"两种模式"并指向 DB 模式文档。
 - L0 compose 说明：`deploy/compose.agent-v3.yml` 是 V3 的本地全栈冒烟（PG/Redis/Qdrant/MinIO/agent-v3），不是生产部署。服务器虽有 Docker 29.1.3，但 `/usr/local/lib/docker/cli-plugins/docker-compose` 是阿里云镜像站 HTML 文件而非二进制，`docker compose` 仍不可用；本机 macOS 无 Docker。`l0-smoke.json` 继续为 blocked，未伪报。
 - 未完成边界：`/ui` 只验证返回 200，未做浏览器登录/预算页人工走查；`LiteLLM_ProxyModelTable` 仍 0 行（模型继续从 YAML 读取）；未配 Redis 共享 cache（单实例）；启动日志有 `'Prisma' object has no attribute '_Prisma__engine'` warning，但 Key/预算/消费/真实调用均实测正常。
+
+## 2026-11-25 B-3 观察期复核与明文列退出演练
+
+- `develop` 从 `6dc6cc9` 快进至 `6c2a02d`，初始化通过。保留原有本地更改，B-3 在专用分支准备。
+- 生产只读复核、当天备份的 D 盘隔离恢复、独立删列及回退演练见 `docs/后端步骤8_明文列退出演练_20261125.md`。生产旧列和密钥配置保留。最新部署与门禁状态见 `STATE.md`。
+- 定向回归通过，未改动的上游基线复现本轮的 lint、契约快照及 7 项失败测试，详见步骤 8 演练记录。
+- 单独修复基线阻断项后，148 项定向测试及本地全量门禁通过。发布候选证据见步骤 8 演练记录。

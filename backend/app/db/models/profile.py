@@ -79,15 +79,11 @@ class ProfileSensitive(Base):
 
     __tablename__ = "profile_sensitive"
     __table_args__ = (
-        UniqueConstraint("user_id", "topic", name="profile_sensitive_user_id_topic_key"),
         UniqueConstraint("user_id", "topic_hash", name="profile_sensitive_user_id_topic_hash_key"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
-    # Retained for one rollout as rollback data. Never written by new code;
-    # remove with a separate migration after the encrypted path is verified.
-    legacy_topic: Mapped[str | None] = mapped_column("topic", String, nullable=True)
     topic_enc: Mapped[str] = mapped_column(Text, nullable=False)
     topic_hash: Mapped[str] = mapped_column(String(64), nullable=False)
 

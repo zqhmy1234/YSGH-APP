@@ -258,7 +258,7 @@ def test_profile_sensitive_crud(db_user):
     db, user = db_user
     row = upsert_profile_sensitive(db, user.id, "前女友", "forbid", ["用户原话"], locked=True)
     assert row.disposition == "forbid" and row.locked is True
-    assert row.legacy_topic is None and row.topic_enc != "前女友" and row.topic_hash
+    assert row.topic_enc != "前女友" and row.topic_hash
     row2 = upsert_profile_sensitive(db, user.id, "前女友", "caution")
     assert row2.id == row.id and row2.disposition == "caution"  # 同话题更新
     rows = list_profile_sensitive(db, user.id)
